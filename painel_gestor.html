@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel Boas-vindas</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--blue:#1a56db;--blue-l:#e8f0fd;--blue-m:#b3c9f8;--green:#0d7a4e;--green-l:#e6f5ef;--amber:#92400e;--amber-l:#fef3c7;--red:#b91c1c;--red-l:#fee2e2;--purple:#5b21b6;--purple-l:#ede9fe;--gray-50:#fafafa;--gray-100:#f4f4f5;--gray-200:#e4e4e7;--gray-400:#a1a1aa;--gray-600:#52525b;--gray-900:#18181b;--radius:10px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:#f0f2f8;color:var(--gray-900);min-height:100vh}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(135deg,#e8f0fd 0%,#f0f2f8 100%)}
+.login-card{background:white;border-radius:20px;width:100%;max-width:420px;overflow:hidden;box-shadow:0 8px 40px rgba(26,86,219,.12)}
+.login-header{background:var(--blue);padding:28px 32px;text-align:center}
+.login-header h1{color:white;font-size:20px;font-weight:700;margin-bottom:4px}
+.login-header p{color:rgba(255,255,255,.8);font-size:13px}
+.login-body{padding:28px 32px}
+.login-tabs{display:flex;margin-bottom:24px;border:1.5px solid var(--gray-200);border-radius:8px;overflow:hidden}
+.login-tab{flex:1;padding:9px;text-align:center;font-size:13px;font-weight:500;cursor:pointer;background:white;color:var(--gray-600);border:none;font-family:'DM Sans',sans-serif;transition:all .15s}
+.login-tab.active{background:var(--blue);color:white}
+.fg{margin-bottom:14px}
+.fg label{display:block;font-size:13px;color:var(--gray-600);margin-bottom:5px;font-weight:500}
+.fg input,.fg select{width:100%;border:1.5px solid var(--gray-200);border-radius:8px;padding:10px 12px;font-size:14px;font-family:'DM Sans',sans-serif;background:white;color:var(--gray-900);outline:none;transition:border-color .15s}
+.fg input:focus,.fg select:focus{border-color:var(--blue)}
+.btn-login{width:100%;padding:13px;background:var(--blue);color:white;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:4px;transition:opacity .15s}
+.btn-login:hover{opacity:.88}
+.login-err{font-size:12px;color:var(--red);margin-top:8px;display:none;text-align:center;font-weight:500}
+/* CHANGE PWD MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.show{display:flex}
+.modal-box{background:white;border-radius:16px;padding:28px;width:100%;max-width:380px}
+.modal-box h3{font-size:17px;font-weight:600;margin-bottom:6px}
+.modal-box p{font-size:13px;color:var(--gray-600);margin-bottom:20px;line-height:1.5}
+.modal-err{font-size:12px;color:var(--red);margin-top:8px;display:none;font-weight:500}
+.modal-success{font-size:12px;color:var(--green);margin-top:8px;display:none;font-weight:500}
+/* APP */
+.app{display:none}
+.sidebar{position:fixed;top:0;left:0;width:215px;height:100vh;background:white;border-right:1px solid var(--gray-200);padding:20px 0;z-index:10;overflow-y:auto}
+.sidebar-logo{padding:0 20px 16px;border-bottom:1px solid var(--gray-200);margin-bottom:16px}
+.sidebar-logo h2{font-size:15px;font-weight:600}
+.sidebar-logo p{font-size:11px;color:var(--gray-400)}
+.sidebar-user{padding:10px 20px 14px;border-bottom:1px solid var(--gray-200);margin-bottom:12px}
+.su-name{font-size:13px;font-weight:600}
+.su-role{font-size:11px;color:var(--gray-400);margin-top:2px}
+.su-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;margin-top:4px}
+.su-gestor{background:#fef3c7;color:#92400e}
+.su-colab{background:var(--blue-l);color:var(--blue)}
+.su-actions{margin-top:8px;display:flex;gap:6px}
+.btn-pwd{background:none;border:1.5px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;color:var(--gray-600);font-family:'DM Sans',sans-serif}
+.btn-pwd:hover{border-color:var(--blue);color:var(--blue)}
+.nav-item{display:flex;align-items:center;gap:8px;padding:9px 20px;font-size:13px;cursor:pointer;color:var(--gray-600);border-left:3px solid transparent;transition:all .15s}
+.nav-item:hover{background:var(--gray-100);color:var(--gray-900)}
+.nav-item.active{color:var(--blue);background:var(--blue-l);border-left-color:var(--blue);font-weight:500}
+.nav-sep{font-size:10px;color:var(--gray-400);padding:12px 20px 4px;text-transform:uppercase;letter-spacing:.05em}
+.logout-btn{position:absolute;bottom:16px;left:0;width:100%;padding:0 20px}
+.logout-btn button{width:100%;padding:9px;background:none;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif}
+.main{margin-left:215px;padding:24px}
+.page{display:none}.page.active{display:block}
+.page-title{font-size:20px;font-weight:600;margin-bottom:4px}
+.page-sub{font-size:13px;color:var(--gray-600);margin-bottom:20px}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.metric{background:white;border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden}
+.metric-icon{position:absolute;right:12px;top:12px;font-size:20px;opacity:.15}
+.metric-label{font-size:11px;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.metric-val{font-size:26px;font-weight:700}
+.metric-sub{font-size:11px;color:var(--gray-400);margin-top:2px}
+.card{background:white;border-radius:var(--radius);padding:16px 20px;margin-bottom:16px}
+.card-title{font-size:14px;font-weight:600;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 10px;font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--gray-200);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--gray-100);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--gray-50)}
+.badge{display:inline-block;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:500}
+.b-blue{background:var(--blue-l);color:var(--blue)}
+.b-green{background:var(--green-l);color:var(--green)}
+.b-amber{background:var(--amber-l);color:var(--amber)}
+.b-red{background:var(--red-l);color:var(--red)}
+.b-purple{background:var(--purple-l);color:var(--purple)}
+.rank-row{display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:8px;transition:background .12s}
+.rank-row:hover{background:var(--gray-50)}
+.rank-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+.rank-info{flex:1}
+.rank-name{font-size:13px;font-weight:500}
+.rank-unit{font-size:11px;color:var(--gray-400)}
+.bar-bg{height:5px;background:var(--gray-100);border-radius:3px;margin-top:5px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;background:var(--blue)}
+.rank-score{text-align:right;min-width:60px}
+.rank-avg{font-size:16px;font-weight:600}
+.rank-cnt{font-size:11px;color:var(--gray-400)}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn-icon{display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;border:none;transition:opacity .15s}
+.btn-icon:hover{opacity:.85}
+.btn-refresh{background:var(--blue-l);color:var(--blue)}
+.btn-pdf{background:#ef4444;color:white}
+.btn-excel{background:#16a34a;color:white}
+.btn-del{background:none;border:1.5px solid var(--gray-200);color:var(--red);border-radius:6px;padding:4px 9px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
+.btn-del:hover{background:var(--red-l);border-color:var(--red)}
+.btn-sm{padding:5px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-size:12px;cursor:pointer;background:white;color:var(--gray-600);font-family:'DM Sans',sans-serif}
+.date-range{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--gray-600)}
+.date-range input[type=date]{padding:5px 8px;font-size:12px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:'DM Sans',sans-serif}
+.filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.filter-bar select,.filter-bar input[type=text]{border:1.5px solid var(--gray-200);border-radius:8px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;background:white;color:var(--gray-900)}
+.empty{text-align:center;padding:40px;color:var(--gray-400);font-size:13px}
+.spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(26,86,219,.3);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-overlay{display:none;position:fixed;inset:0;background:rgba(255,255,255,.75);z-index:100;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+.loading-overlay.show{display:flex}
+.highlight-card{border:2px solid var(--blue);background:var(--blue-l)}
+.highlight-card .metric-val{color:var(--blue)}
+#pdf-report{display:none;position:fixed;left:-9999px;top:0;width:820px;background:white;padding:40px;font-family:'DM Sans',sans-serif;color:#18181b}
+#pdf-report h1{font-size:22px;font-weight:700;margin-bottom:4px}
+#pdf-report .sub{font-size:13px;color:#52525b;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #e4e4e7}
+#pdf-report .sec{margin-bottom:24px}
+#pdf-report .sec h2{font-size:14px;font-weight:600;margin-bottom:10px;color:#1a56db}
+#pdf-report .mrow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+#pdf-report .m{background:#f4f4f5;border-radius:8px;padding:12px}
+#pdf-report .ml{font-size:10px;color:#a1a1aa;text-transform:uppercase;margin-bottom:4px}
+#pdf-report .mv{font-size:22px;font-weight:700}
+#pdf-report table{width:100%;border-collapse:collapse;font-size:12px}
+#pdf-report th{background:#f4f4f5;padding:7px 10px;text-align:left;font-size:10px;font-weight:600;color:#a1a1aa;text-transform:uppercase}
+#pdf-report td{padding:7px 10px;border-bottom:1px solid #f4f4f5}
+@media(max-width:640px){.sidebar{width:100%;height:auto;position:relative;border-right:none;border-bottom:1px solid var(--gray-200)}.main{margin-left:0;padding:16px}.grid2{grid-template-columns:1fr}.logout-btn{position:static;padding:8px 12px 0}.nav-sep{display:none}}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner" style="width:28px;height:28px;border-width:3px;border-top-color:#1a56db"></div>
+  <div style="font-size:13px;color:#52525b;margin-top:4px">Carregando...</div>
+</div>
+
+<!-- MODAL TROCAR SENHA -->
+<div class="modal-overlay" id="modal-pwd">
+  <div class="modal-box">
+    <div style="font-size:28px;margin-bottom:10px">🔐</div>
+    <h3>Trocar senha</h3>
+    <p>Digite sua senha atual e escolha uma nova senha.</p>
+    <div class="fg"><label>Senha atual</label><input type="password" id="mp-atual" placeholder="Senha atual"></div>
+    <div class="fg"><label>Nova senha</label><input type="password" id="mp-nova1" placeholder="Mínimo 6 caracteres"></div>
+    <div class="fg"><label>Confirmar nova senha</label><input type="password" id="mp-nova2" placeholder="Repita a nova senha"></div>
+    <button class="btn-login" onclick="confirmarTrocaSenha()">Salvar nova senha</button>
+    <button class="btn-login" style="background:white;color:var(--gray-600);border:1.5px solid var(--gray-200);margin-top:8px" onclick="fecharModalSenha()">Cancelar</button>
+    <div class="modal-err" id="mp-err"></div>
+    <div class="modal-success" id="mp-ok">✅ Senha alterada com sucesso!</div>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="login-wrap">
+  <div class="login-card">
+    <div class="login-header">
+      <div style="font-size:40px;margin-bottom:10px">📊</div>
+      <h1>Painel Boas-vindas</h1>
+      <p>Acesse com seu perfil de gestor ou colaborador</p>
+    </div>
+    <div class="login-body">
+      <div class="login-tabs">
+        <button class="login-tab active" onclick="switchTab('gestor')">🔑 Gestor</button>
+        <button class="login-tab" onclick="switchTab('colaborador')">👤 Colaborador</button>
+      </div>
+      <!-- GESTOR -->
+      <div id="tab-gestor">
+        <div class="fg"><label>Senha</label><input type="password" id="g-pwd" placeholder="••••••" onkeydown="if(event.key==='Enter')loginGestor()"></div>
+        <button class="btn-login" onclick="loginGestor()">Entrar como Gestor</button>
+        <div class="login-err" id="g-err">Senha incorreta.</div>
+      </div>
+      <!-- COLABORADOR -->
+      <div id="tab-colaborador" style="display:none">
+        <div class="fg">
+          <label>Selecione seu nome</label>
+          <select id="c-user">
+            <option value="">— selecione —</option>
+            <optgroup label="Vila Prudente">
+              <option value="gustavo.assis">Gustavo Assis</option>
+              <option value="catherine.dias">Catherine Dias</option>
+            </optgroup>
+            <optgroup label="Lapa">
+              <option value="joshua.carlucci">Joshua Carlucci</option>
+              <option value="beatriz.vital">Beatriz Vital</option>
+              <option value="beatriz.reis">Beatriz Reis</option>
+            </optgroup>
+            <optgroup label="Parnamirim">
+              <option value="joao.vinicius">João Vinicius</option>
+              <option value="rafaela.alessandra">Rafaela Alessandra</option>
+            </optgroup>
+            <optgroup label="SGA">
+              <option value="ester.lucas">Ester Lucas</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="fg"><label>Senha</label><input type="password" id="c-pwd" placeholder="••••••" onkeydown="if(event.key==='Enter')loginColab()"></div>
+        <button class="btn-login" onclick="loginColab()">Entrar como Colaborador</button>
+        <div class="login-err" id="c-err">Usuário ou senha incorretos.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app" id="app">
+  <div class="sidebar">
+    <div class="sidebar-logo"><h2>Boas-vindas</h2><p>Painel de avaliações</p></div>
+    <div class="sidebar-user">
+      <div class="su-name" id="su-name"></div>
+      <div class="su-role" id="su-role"></div>
+      <span class="su-badge" id="su-badge"></span>
+      <div class="su-actions">
+        <button class="btn-pwd" onclick="abrirModalSenha()">🔐 Trocar senha</button>
+      </div>
+    </div>
+    <div id="nav-gestor-items">
+      <div class="nav-sep">Visão geral</div>
+      <div class="nav-item active" onclick="showPage('dashboard',this)">📊 Dashboard</div>
+      <div class="nav-item" onclick="showPage('registros',this)">📋 Registros</div>
+      <div class="nav-item" onclick="showPage('ranking',this)">🏆 Ranking</div>
+      <div class="nav-sep">Unidades</div>
+      <div class="nav-item" onclick="showPage('unidade',this)" data-unit="Parnamirim">🏢 Parnamirim</div>
+      <div class="nav-item" onclick="showPage('unidade',this)" data-unit="SGA">🏢 SGA</div>
+      <div class="nav-item" onclick="showPage('unidade',this)" data-unit="Lapa">🏢 Lapa</div>
+      <div class="nav-item" onclick="showPage('unidade',this)" data-unit="Vila Prudente">🏢 Vila Prudente</div>
+    </div>
+    <div id="nav-colab-items" style="display:none">
+      <div class="nav-sep">Minha unidade</div>
+      <div class="nav-item active" onclick="showPage('colab-dash',this)">📊 Meu dashboard</div>
+      <div class="nav-item" onclick="showPage('colab-registros',this)">📋 Meus registros</div>
+      <div class="nav-sep">Geral</div>
+      <div class="nav-item" onclick="showPage('ranking',this)">🏆 Ranking geral</div>
+    </div>
+    <div class="logout-btn"><button onclick="logout()">Sair</button></div>
+  </div>
+
+  <div class="main">
+    <!-- DASHBOARD GESTOR -->
+    <div class="page active" id="page-dashboard">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+        <div><div class="page-title">Dashboard geral</div><div class="page-sub" style="margin:0" id="dash-lbl"></div></div>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+          <div class="date-range">
+            <span>De</span><input type="date" id="dt-from">
+            <span>até</span><input type="date" id="dt-to">
+            <button class="btn-sm" onclick="loadAll()">Filtrar</button>
+            <button class="btn-sm" onclick="clearFilter()">Limpar</button>
+          </div>
+          <div class="btn-group">
+            <button class="btn-icon btn-refresh" onclick="loadAll()"><span class="spinner"></span> Atualizar</button>
+            <button class="btn-icon btn-excel" onclick="exportExcelGeral()">📊 Excel</button>
+            <button class="btn-icon btn-pdf" onclick="gerarPDF()">📄 PDF</button>
+          </div>
+        </div>
+      </div>
+      <div class="metrics" id="dash-metrics"></div>
+      <div class="grid2">
+        <div class="card"><div class="card-title">Média por unidade</div><div style="position:relative;height:200px"><canvas id="ch-unidades"></canvas></div></div>
+        <div class="card"><div class="card-title">Distribuição das notas</div><div style="position:relative;height:200px"><canvas id="ch-dist"></canvas></div></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><div class="card-title">Tours por unidade</div><div style="position:relative;height:200px"><canvas id="ch-tours"></canvas></div></div>
+        <div class="card"><div class="card-title">Evolução (14 dias)</div><div style="position:relative;height:200px"><canvas id="ch-evo"></canvas></div></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><div class="card-title">Top produtos</div><div style="position:relative;height:200px"><canvas id="ch-prod"></canvas></div></div>
+        <div class="card"><div class="card-title">Participantes por unidade</div><div style="position:relative;height:200px"><canvas id="ch-part"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Detalhamento por produto</div>
+        <div class="tbl-wrap"><table><thead><tr><th>Produto</th><th>Tours</th><th>Participantes</th><th>Clareza</th><th>Acolhimento</th><th>Assistente</th></tr></thead><tbody id="tbody-prod"></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- REGISTROS GESTOR -->
+    <div class="page" id="page-registros">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div><div class="page-title">Registros</div><div class="page-sub" style="margin:0">Todas as avaliações</div></div>
+        <div class="btn-group">
+          <button class="btn-icon btn-excel" onclick="exportExcelRegistros()">📊 Excel</button>
+          <button class="btn-icon btn-pdf" onclick="exportPDFRegistros()">📄 PDF</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <select id="fil-u" onchange="filterReg()"><option value="">Todas as unidades</option><option>Parnamirim</option><option>SGA</option><option>Lapa</option><option>Vila Prudente</option></select>
+        <select id="fil-a" onchange="filterReg()"><option value="">Todos os assistentes</option></select>
+        <input type="text" id="fil-q" placeholder="Buscar por nome..." onkeyup="filterReg()" style="min-width:160px">
+      </div>
+      <div class="card" style="padding:0 20px">
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Data</th><th>Unidade</th><th>Assistente</th><th>Participante</th><th>Produto</th><th>Clareza</th><th>Acolh.</th><th>Assist.</th><th>Melhoria</th><th></th></tr></thead>
+          <tbody id="tbody-reg"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- RANKING -->
+    <div class="page" id="page-ranking">
+      <div class="page-title">Ranking de assistentes</div>
+      <div class="page-sub">Classificação por nota média recebida</div>
+      <div class="grid2">
+        <div class="card"><div class="card-title">Assistentes</div><div id="rank-ass"></div></div>
+        <div class="card"><div class="card-title">Unidades</div><div id="rank-uni"></div></div>
+      </div>
+    </div>
+
+    <!-- UNIDADE GESTOR -->
+    <div class="page" id="page-unidade">
+      <div class="page-title" id="u-title"></div>
+      <div class="page-sub" id="u-sub"></div>
+      <div class="metrics" id="u-metrics"></div>
+      <div class="grid2">
+        <div class="card"><div class="card-title">Assistentes</div><div id="u-ass"></div></div>
+        <div class="card"><div class="card-title">Tours por produto</div><div style="position:relative;height:200px"><canvas id="ch-u-prod"></canvas></div></div>
+      </div>
+      <div class="card"><div class="card-title">Avaliações recentes</div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Data</th><th>Participante</th><th>Assistente</th><th>Produto</th><th>Clareza</th><th>Acolh.</th><th>Assist.</th><th>Melhoria</th><th></th></tr></thead>
+          <tbody id="u-tbody"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- DASHBOARD COLABORADOR -->
+    <div class="page" id="page-colab-dash">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+        <div><div class="page-title" id="colab-dash-title"></div><div class="page-sub" style="margin:0" id="colab-dash-sub"></div></div>
+        <button class="btn-icon btn-refresh" onclick="loadAll()"><span class="spinner"></span> Atualizar</button>
+      </div>
+      <div class="metrics" id="colab-metrics"></div>
+      <div class="grid2">
+        <div class="card"><div class="card-title">Minha média vs unidade</div><div style="position:relative;height:200px"><canvas id="ch-colab-compare"></canvas></div></div>
+        <div class="card"><div class="card-title">Distribuição das minhas notas</div><div style="position:relative;height:200px"><canvas id="ch-colab-dist"></canvas></div></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><div class="card-title">Evolução (14 dias)</div><div style="position:relative;height:200px"><canvas id="ch-colab-evo"></canvas></div></div>
+        <div class="card"><div class="card-title">Top produtos avaliados</div><div style="position:relative;height:200px"><canvas id="ch-colab-prod"></canvas></div></div>
+      </div>
+      <div class="card"><div class="card-title">Sugestões de melhoria recebidas</div><div id="colab-melhorias"></div></div>
+    </div>
+
+    <!-- REGISTROS COLABORADOR -->
+    <div class="page" id="page-colab-registros">
+      <div class="page-title">Meus registros</div>
+      <div class="page-sub" id="colab-reg-sub"></div>
+      <div class="card" style="padding:0 20px">
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Data</th><th>Participante</th><th>Produto</th><th>Clareza</th><th>Acolh.</th><th>Assist.</th><th>Melhoria</th></tr></thead>
+          <tbody id="tbody-colab-reg"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PDF -->
+<div id="pdf-report">
+  <div style="display:flex;justify-content:space-between;margin-bottom:20px">
+    <div><h1>Relatório — Equipe Boas-vindas</h1><div class="sub" id="pdf-lbl"></div></div>
+    <div style="font-size:11px;color:#a1a1aa;text-align:right">boasvindastp.netlify.app<br>Gerado em <span id="pdf-time"></span></div>
+  </div>
+  <div class="sec"><h2>Resumo</h2><div class="mrow" id="pdf-metrics"></div></div>
+  <div class="sec"><h2>Por unidade</h2><table id="pdf-tbl-uni"><thead><tr><th>Unidade</th><th>Tours</th><th>Participantes</th><th>Clareza</th><th>Acolhimento</th><th>Assistente</th></tr></thead><tbody></tbody></table></div>
+  <div class="sec"><h2>Por assistente</h2><table id="pdf-tbl-ass"><thead><tr><th>Assistente</th><th>Unidade</th><th>Avaliações</th><th>Nota média</th></tr></thead><tbody></tbody></table></div>
+  <div class="sec"><h2>Por produto</h2><table id="pdf-tbl-prod"><thead><tr><th>Produto</th><th>Tours</th><th>Participantes</th><th>Média</th></tr></thead><tbody></tbody></table></div>
+  <div class="sec"><h2>Avaliações</h2><table id="pdf-tbl-avals"><thead><tr><th>Data</th><th>Unidade</th><th>Assistente</th><th>Participante</th><th>Produto</th><th>Clareza</th><th>Acolh.</th><th>Assist.</th></tr></thead><tbody></tbody></table></div>
+</div>
+
+<script>
+const SB_URL='https://iyxuthzgrwdwpgnkerbx.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5eHV0aHpncndkd3BnbmtlcmJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNDUyNDUsImV4cCI6MjA5MzcyMTI0NX0.qnllE4MeML47oj6-FC6ynWp553zrSBo0E-Qxmm3fAFk';
+const SENHA_GESTOR='bv2026';
+
+// Senhas padrão por colaborador — salvas no localStorage por chave individual
+const COLABORADORES={
+  'gustavo.assis':      {nome:'Gustavo Assis',      unidade:'Vila Prudente', defaultPwd:'gustavo123',   pwdKey:'pwd_colab_gustavo'},
+  'catherine.dias':     {nome:'Catherine Dias',      unidade:'Vila Prudente', defaultPwd:'catherine123', pwdKey:'pwd_colab_catherine'},
+  'joshua.carlucci':    {nome:'Joshua Carlucci',     unidade:'Lapa',          defaultPwd:'joshua123',    pwdKey:'pwd_colab_joshua'},
+  'beatriz.vital':      {nome:'Beatriz Vital',       unidade:'Lapa',          defaultPwd:'bvital123',    pwdKey:'pwd_colab_bvital'},
+  'beatriz.reis':       {nome:'Beatriz Reis',        unidade:'Lapa',          defaultPwd:'breis123',     pwdKey:'pwd_colab_breis'},
+  'joao.vinicius':      {nome:'João Vinicius',       unidade:'Parnamirim',    defaultPwd:'vinicius123',  pwdKey:'pwd_colab_vinicius'},
+  'rafaela.alessandra': {nome:'Rafaela Alessandra',  unidade:'Parnamirim',    defaultPwd:'rafaela123',   pwdKey:'pwd_colab_rafaela'},
+  'ester.lucas':        {nome:'Ester Lucas',         unidade:'SGA',           defaultPwd:'ester123',     pwdKey:'pwd_colab_ester'}
+};
+
+function getColabPwd(login){
+  const c=COLABORADORES[login];
+  return localStorage.getItem(c.pwdKey)||c.defaultPwd;
+}
+function setColabPwd(login,pwd){
+  localStorage.setItem(COLABORADORES[login].pwdKey,pwd);
+}
+// Gestor também pode trocar senha
+function getGestorPwd(){return localStorage.getItem('pwd_gestor')||SENHA_GESTOR;}
+function setGestorPwd(pwd){localStorage.setItem('pwd_gestor',pwd);}
+
+const UNITS_MAP={
+  'Parnamirim':{city:'Parnamirim / RN',      assistentes:['João Vinicius','Rafaela Alessandra']},
+  'SGA':       {city:'São Gonçalo do Amarante / RN',assistentes:['Ester Lucas']},
+  'Lapa':      {city:'São Paulo / SP',        assistentes:['Joshua Carlucci','Beatriz Vital','Beatriz Reis']},
+  'Vila Prudente':{city:'São Paulo / SP',     assistentes:['Gustavo Assis','Catherine Dias']}
+};
+const UNIT_COLORS=['#93c5fd','#6ee7b7','#fcd34d','#f9a8d4'];
+const AVG_BG=['#dbeafe','#dcfce7','#fef9c3','#fce7f3','#e0f2fe','#fae8ff','#ffedd5'];
+const AVG_TX=['#1e40af','#166534','#713f12','#9d174d','#075985','#6b21a8','#9a3412'];
+let allData=[],charts={},currentUnit='',currentUser=null,userRole='',currentLogin='';
+
+const ini=n=>n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+const avSty=n=>{const i=n.charCodeAt(0)%AVG_BG.length;return `background:${AVG_BG[i]};color:${AVG_TX[i]}`;};
+const bc=v=>v>=9?'b-green':v>=7?'b-blue':v>=5?'b-amber':'b-red';
+const avg=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:0;
+const fmtD=s=>new Date(s).toLocaleDateString('pt-BR');
+const fmtT=s=>new Date(s).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+const today=()=>new Date().toISOString().slice(0,10);
+const hdrs={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+
+/* ===== TABS ===== */
+function switchTab(t){
+  document.getElementById('tab-gestor').style.display=t==='gestor'?'block':'none';
+  document.getElementById('tab-colaborador').style.display=t==='colaborador'?'block':'none';
+  document.querySelectorAll('.login-tab').forEach((el,i)=>el.classList.toggle('active',(i===0&&t==='gestor')||(i===1&&t==='colaborador')));
+}
+
+/* ===== LOGIN ===== */
+function loginGestor(){
+  if(document.getElementById('g-pwd').value===getGestorPwd()){
+    userRole='gestor';currentLogin='gestor';currentUser={nome:'Gestor',unidade:'Todas'};
+    iniciarApp();
+  } else document.getElementById('g-err').style.display='block';
+}
+function loginColab(){
+  const login=document.getElementById('c-user').value;
+  const pwd=document.getElementById('c-pwd').value;
+  if(!login){alert('Selecione seu nome.');return;}
+  const colab=COLABORADORES[login];
+  if(!colab||pwd!==getColabPwd(login)){
+    document.getElementById('c-err').style.display='block';return;
+  }
+  userRole='colaborador';currentLogin=login;currentUser={...colab};
+  iniciarApp();
+}
+function iniciarApp(){
+  document.getElementById('login-wrap').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('su-name').textContent=currentUser.nome;
+  if(userRole==='gestor'){
+    document.getElementById('su-role').textContent='Acesso total';
+    document.getElementById('su-badge').textContent='Gestor';
+    document.getElementById('su-badge').className='su-badge su-gestor';
+    document.getElementById('nav-gestor-items').style.display='block';
+    document.getElementById('nav-colab-items').style.display='none';
+    document.getElementById('dt-from').value=today();
+    document.getElementById('dt-to').value=today();
+    // garantir primeira página ativa
+    document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+    document.getElementById('page-dashboard').classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+    document.querySelector('#nav-gestor-items .nav-item').classList.add('active');
+  } else {
+    document.getElementById('su-role').textContent=currentUser.unidade;
+    document.getElementById('su-badge').textContent='Colaborador';
+    document.getElementById('su-badge').className='su-badge su-colab';
+    document.getElementById('nav-gestor-items').style.display='none';
+    document.getElementById('nav-colab-items').style.display='block';
+    document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+    document.getElementById('page-colab-dash').classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+    document.querySelector('#nav-colab-items .nav-item').classList.add('active');
+  }
+  loadAll();
+}
+function logout(){
+  userRole='';currentUser=null;currentLogin='';allData=[];
+  document.getElementById('login-wrap').style.display='flex';
+  document.getElementById('app').style.display='none';
+  document.getElementById('g-pwd').value='';
+  document.getElementById('c-pwd').value='';
+  document.getElementById('g-err').style.display='none';
+  document.getElementById('c-err').style.display='none';
+  document.getElementById('c-user').value='';
+  Object.values(charts).forEach(c=>c.destroy());charts={};
+}
+
+/* ===== TROCAR SENHA ===== */
+function abrirModalSenha(){
+  document.getElementById('mp-atual').value='';
+  document.getElementById('mp-nova1').value='';
+  document.getElementById('mp-nova2').value='';
+  document.getElementById('mp-err').style.display='none';
+  document.getElementById('mp-ok').style.display='none';
+  document.getElementById('modal-pwd').classList.add('show');
+}
+function fecharModalSenha(){document.getElementById('modal-pwd').classList.remove('show');}
+function confirmarTrocaSenha(){
+  const atual=document.getElementById('mp-atual').value;
+  const nova1=document.getElementById('mp-nova1').value;
+  const nova2=document.getElementById('mp-nova2').value;
+  const err=document.getElementById('mp-err');
+  const ok=document.getElementById('mp-ok');
+  err.style.display='none';ok.style.display='none';
+  // validar senha atual
+  const pwdAtual=userRole==='gestor'?getGestorPwd():getColabPwd(currentLogin);
+  if(atual!==pwdAtual){err.textContent='Senha atual incorreta.';err.style.display='block';return;}
+  if(nova1.length<6){err.textContent='A nova senha deve ter pelo menos 6 caracteres.';err.style.display='block';return;}
+  if(nova1!==nova2){err.textContent='As novas senhas não coincidem.';err.style.display='block';return;}
+  if(userRole==='gestor') setGestorPwd(nova1);
+  else setColabPwd(currentLogin,nova1);
+  ok.style.display='block';
+  setTimeout(()=>fecharModalSenha(),1500);
+}
+
+/* ===== DATA ===== */
+async function fetchAll(){
+  const r=await fetch(`${SB_URL}/rest/v1/avaliacoes?select=*&order=created_at.desc`,{headers:hdrs});
+  if(!r.ok)throw new Error();return r.json();
+}
+function getFiltered(){
+  const f=document.getElementById('dt-from')?.value,t=document.getElementById('dt-to')?.value;
+  if(!f&&!t)return allData;
+  return allData.filter(d=>{const dt=d.created_at.slice(0,10);return(!f||dt>=f)&&(!t||dt<=t);});
+}
+async function deleteRec(id){
+  if(!confirm('Excluir esta avaliação?'))return;
+  document.getElementById('loading-overlay').classList.add('show');
+  try{
+    const r=await fetch(`${SB_URL}/rest/v1/avaliacoes?id=eq.${id}`,{method:'DELETE',headers:{...hdrs,'Content-Type':'application/json'}});
+    if(!r.ok)throw new Error();
+    allData=allData.filter(d=>d.id!==id);
+    const pg=document.querySelector('.page.active').id;
+    if(pg==='page-registros')renderReg();
+    else if(pg==='page-dashboard')renderDash();
+    else if(pg==='page-ranking')renderRanking();
+    else if(pg==='page-unidade')renderUnidade(currentUnit);
+  }catch(e){alert('Erro ao excluir.');}
+  finally{document.getElementById('loading-overlay').classList.remove('show');}
+}
+async function loadAll(){
+  document.getElementById('loading-overlay').classList.add('show');
+  try{
+    allData=await fetchAll();
+    const pg=document.querySelector('.page.active').id;
+    if(pg==='page-dashboard')renderDash();
+    else if(pg==='page-registros')renderReg();
+    else if(pg==='page-ranking')renderRanking();
+    else if(pg==='page-unidade')renderUnidade(currentUnit);
+    else if(pg==='page-colab-dash')renderColabDash();
+    else if(pg==='page-colab-registros')renderColabReg();
+  }catch(e){alert('Erro ao carregar dados.');}
+  finally{document.getElementById('loading-overlay').classList.remove('show');}
+}
+function clearFilter(){document.getElementById('dt-from').value='';document.getElementById('dt-to').value='';loadAll();}
+
+/* ===== NAV ===== */
+function showPage(p,el){
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+  if(el)el.classList.add('active');
+  document.getElementById('page-'+p).classList.add('active');
+  if(p==='dashboard')renderDash();
+  else if(p==='registros')renderReg();
+  else if(p==='ranking')renderRanking();
+  else if(p==='unidade'){currentUnit=el.dataset.unit;renderUnidade(currentUnit);}
+  else if(p==='colab-dash')renderColabDash();
+  else if(p==='colab-registros')renderColabReg();
+}
+function dc(k){if(charts[k]){charts[k].destroy();delete charts[k];}}
+
+/* ===== DASHBOARD GESTOR ===== */
+function renderDash(){
+  const d=getFiltered(),t=d.length;
+  const f=document.getElementById('dt-from').value,to=document.getElementById('dt-to').value;
+  document.getElementById('dash-lbl').textContent=f&&to?(f===to?`Dados de ${fmtD(f+'T00:00:00')}`:`De ${fmtD(f+'T00:00:00')} até ${fmtD(to+'T00:00:00')}`):'Todos os períodos';
+  const r1=d.map(x=>x.nota_clareza),r2=d.map(x=>x.nota_acolhimento),r3=d.map(x=>x.nota_assistente);
+  const mg=t?((avg(r1)+avg(r2)+avg(r3))/3):0;
+  const totalPart=d.reduce((s,x)=>s+(parseInt(x.qtd_participantes)||1),0);
+  const tourSet=new Set(d.map(x=>x.created_at.slice(0,10)+'_'+x.unidade+'_'+x.assistente));
+  document.getElementById('dash-metrics').innerHTML=`
+    <div class="metric"><div class="metric-icon">📋</div><div class="metric-label">Avaliações</div><div class="metric-val">${t}</div></div>
+    <div class="metric"><div class="metric-icon">⭐</div><div class="metric-label">Média geral</div><div class="metric-val">${t?mg.toFixed(1):'—'}</div></div>
+    <div class="metric"><div class="metric-icon">👥</div><div class="metric-label">Participantes</div><div class="metric-val">${totalPart}</div></div>
+    <div class="metric"><div class="metric-icon">🗺️</div><div class="metric-label">Tours</div><div class="metric-val">${tourSet.size}</div></div>
+    <div class="metric"><div class="metric-icon">🎯</div><div class="metric-label">Clareza</div><div class="metric-val">${t?avg(r1).toFixed(1):'—'}</div></div>
+    <div class="metric"><div class="metric-icon">🤝</div><div class="metric-label">Acolhimento</div><div class="metric-val">${t?avg(r2).toFixed(1):'—'}</div></div>`;
+  const unis=Object.keys(UNITS_MAP);
+  dc('u');charts.u=new Chart(document.getElementById('ch-unidades'),{type:'bar',data:{labels:unis,datasets:[{data:unis.map(u=>{const ud=d.filter(x=>x.unidade===u);return ud.length?+((avg(ud.map(x=>x.nota_clareza))+avg(ud.map(x=>x.nota_acolhimento))+avg(ud.map(x=>x.nota_assistente)))/3).toFixed(2):0;}),backgroundColor:UNIT_COLORS,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:10,ticks:{stepSize:2}}}}});
+  const dist=Array(10).fill(0);r3.forEach(v=>{if(v>=1&&v<=10)dist[v-1]++;});
+  dc('d');charts.d=new Chart(document.getElementById('ch-dist'),{type:'bar',data:{labels:['1','2','3','4','5','6','7','8','9','10'],datasets:[{data:dist,backgroundColor:'#93c5fd',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  dc('tours');charts.tours=new Chart(document.getElementById('ch-tours'),{type:'doughnut',data:{labels:unis,datasets:[{data:unis.map(u=>d.filter(x=>x.unidade===u).length),backgroundColor:UNIT_COLORS,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11}}}}}});
+  const dias=[];for(let i=13;i>=0;i--){const dt=new Date();dt.setDate(dt.getDate()-i);dias.push(dt.toISOString().slice(0,10));}
+  dc('evo');charts.evo=new Chart(document.getElementById('ch-evo'),{type:'line',data:{labels:dias.map(d=>d.slice(5).split('-').reverse().join('/')),datasets:[{label:'Média',data:dias.map(dt=>{const dd=allData.filter(x=>x.created_at.slice(0,10)===dt);return dd.length?+((avg(dd.map(x=>x.nota_clareza))+avg(dd.map(x=>x.nota_acolhimento))+avg(dd.map(x=>x.nota_assistente)))/3).toFixed(2):null;}),borderColor:'#1a56db',backgroundColor:'rgba(26,86,219,.08)',tension:.3,fill:true,pointRadius:4,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:10,ticks:{stepSize:2}}}}});
+  const pm={};d.forEach(x=>{const p=x.produto||'Não informado';pm[p]=(pm[p]||0)+1;});
+  const ps=Object.entries(pm).sort((a,b)=>b[1]-a[1]).slice(0,7);
+  dc('prod');charts.prod=new Chart(document.getElementById('ch-prod'),{type:'bar',data:{labels:ps.map(x=>x[0]),datasets:[{data:ps.map(x=>x[1]),backgroundColor:'#a78bfa',borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+  dc('part');charts.part=new Chart(document.getElementById('ch-part'),{type:'bar',data:{labels:unis,datasets:[{data:unis.map(u=>d.filter(x=>x.unidade===u).reduce((s,x)=>s+(parseInt(x.qtd_participantes)||1),0)),backgroundColor:UNIT_COLORS,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+  document.getElementById('tbody-prod').innerHTML=Object.entries(pm).sort((a,b)=>b[1]-a[1]).map(([p,cnt])=>{
+    const pd=d.filter(x=>(x.produto||'Não informado')===p);
+    const part=pd.reduce((s,x)=>s+(parseInt(x.qtd_participantes)||1),0);
+    return`<tr><td><span class="badge b-purple">${p}</span></td><td>${cnt}</td><td>${part}</td><td><span class="badge ${bc(avg(pd.map(x=>x.nota_clareza)))}">${avg(pd.map(x=>x.nota_clareza)).toFixed(1)}</span></td><td><span class="badge ${bc(avg(pd.map(x=>x.nota_acolhimento)))}">${avg(pd.map(x=>x.nota_acolhimento)).toFixed(1)}</span></td><td><span class="badge ${bc(avg(pd.map(x=>x.nota_assistente)))}">${avg(pd.map(x=>x.nota_assistente)).toFixed(1)}</span></td></tr>`;
+  }).join('');
+}
+
+/* ===== REGISTROS GESTOR ===== */
+function filterReg(){
+  const u=document.getElementById('fil-u').value;
+  const list=u?UNITS_MAP[u]?.assistentes||[]:Object.values(UNITS_MAP).flatMap(x=>x.assistentes);
+  const selA=document.getElementById('fil-a');const prev=selA.value;
+  selA.innerHTML='<option value="">Todos os assistentes</option>'+[...new Set(list)].map(x=>`<option${x===prev?' selected':''}>${x}</option>`).join('');
+  renderReg();
+}
+document.addEventListener('DOMContentLoaded',()=>document.getElementById('fil-u').addEventListener('change',filterReg));
+function getRegFiltered(){const u=document.getElementById('fil-u').value,a=document.getElementById('fil-a').value,q=document.getElementById('fil-q').value.toLowerCase();return allData.filter(d=>(!u||d.unidade===u)&&(!a||d.assistente===a)&&(!q||d.nome?.toLowerCase().includes(q)));}
+function renderReg(){
+  const filtered=getRegFiltered();const tbody=document.getElementById('tbody-reg');
+  if(!filtered.length){tbody.innerHTML=`<tr><td colspan="10"><div class="empty">Nenhuma avaliação encontrada.</div></td></tr>`;return;}
+  tbody.innerHTML=filtered.map(d=>`<tr>
+    <td style="white-space:nowrap;color:var(--gray-400)">${fmtD(d.created_at)}</td>
+    <td><span class="badge b-blue">${d.unidade}</span></td>
+    <td style="white-space:nowrap">${d.assistente}</td>
+    <td>${d.nome}</td>
+    <td style="font-size:12px;color:var(--gray-600)">${d.produto||'—'}</td>
+    <td><span class="badge ${bc(d.nota_clareza)}">${d.nota_clareza}</span></td>
+    <td><span class="badge ${bc(d.nota_acolhimento)}">${d.nota_acolhimento}</span></td>
+    <td><span class="badge ${bc(d.nota_assistente)}">${d.nota_assistente}</span></td>
+    <td style="font-size:11px;color:var(--gray-400);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.melhoria||'—'}</td>
+    <td><button class="btn-del" onclick="deleteRec(${d.id})">🗑 Excluir</button></td>
+  </tr>`).join('');
+}
+
+/* ===== RANKING ===== */
+function renderRanking(){
+  const ass=Object.entries(UNITS_MAP).flatMap(([u,x])=>x.assistentes.map(a=>({a,u})));
+  const ranked=ass.map(({a,u})=>{const d=allData.filter(x=>x.assistente===a);return{a,u,cnt:d.length,score:d.length?avg(d.map(x=>x.nota_assistente)):null};}).sort((a,b)=>(b.score??-1)-(a.score??-1));
+  const medal=i=>i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
+  const myName=userRole==='colaborador'?currentUser.nome:'';
+  document.getElementById('rank-ass').innerHTML=ranked.map((r,i)=>`
+    <div class="rank-row${myName===r.a?' highlight-card':''}">
+      <div style="width:22px;text-align:center;font-size:13px;color:var(--gray-400)">${r.cnt>0?medal(i):'—'}</div>
+      <div class="rank-avatar" style="${avSty(r.a)}">${ini(r.a)}</div>
+      <div class="rank-info"><div class="rank-name">${r.a}${myName===r.a?' 👈':''}</div><div class="rank-unit">${r.u}</div><div class="bar-bg" style="width:100px"><div class="bar-fill" style="width:${r.score!=null?Math.round(r.score*10):0}%"></div></div></div>
+      <div class="rank-score"><div class="rank-avg">${r.score!=null?r.score.toFixed(1):'—'}</div><div class="rank-cnt">${r.cnt} aval.</div></div>
+    </div>`).join('');
+  const myUnit=userRole==='colaborador'?currentUser.unidade:'';
+  document.getElementById('rank-uni').innerHTML=Object.keys(UNITS_MAP).map(u=>{
+    const d=allData.filter(x=>x.unidade===u);
+    const m=d.length?((avg(d.map(x=>x.nota_clareza))+avg(d.map(x=>x.nota_acolhimento))+avg(d.map(x=>x.nota_assistente)))/3):null;
+    return`<div class="rank-row${myUnit===u?' highlight-card':''}">
+      <div class="rank-avatar" style="${avSty(u)}">${ini(u)}</div>
+      <div class="rank-info"><div class="rank-name">${u}${myUnit===u?' 👈':''}</div><div class="rank-unit">${d.length} avaliações</div><div class="bar-bg"><div class="bar-fill" style="width:${m!=null?Math.round(m*10):0}%"></div></div></div>
+      <div class="rank-score"><div class="rank-avg">${m!=null?m.toFixed(1):'—'}</div></div>
+    </div>`;}).join('');
+}
+
+/* ===== UNIDADE GESTOR ===== */
+function renderUnidade(u){
+  const info=UNITS_MAP[u],d=allData.filter(x=>x.unidade===u);
+  document.getElementById('u-title').textContent=u;
+  document.getElementById('u-sub').textContent=info.city+' · '+d.length+' avaliações';
+  const t=d.length,r1=d.map(x=>x.nota_clareza),r2=d.map(x=>x.nota_acolhimento),r3=d.map(x=>x.nota_assistente);
+  const totalPart=d.reduce((s,x)=>s+(parseInt(x.qtd_participantes)||1),0);
+  document.getElementById('u-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Avaliações</div><div class="metric-val">${t}</div></div>
+    <div class="metric"><div class="metric-label">Participantes</div><div class="metric-val">${totalPart}</div></div>
+    <div class="metric"><div class="metric-label">Clareza</div><div class="metric-val">${t?avg(r1).toFixed(1):'—'}</div></div>
+    <div class="metric"><div class="metric-label">Acolhimento</div><div class="metric-val">${t?avg(r2).toFixed(1):'—'}</div></div>
+    <div class="metric"><div class="metric-label">Assistente</div><div class="metric-val">${t?avg(r3).toFixed(1):'—'}</div></div>`;
+  document.getElementById('u-ass').innerHTML=info.assistentes.map(a=>{const ad=d.filter(x=>x.assistente===a);const s=ad.length?avg(ad.map(x=>x.nota_assistente)):null;return`<div class="rank-row"><div class="rank-avatar" style="${avSty(a)}">${ini(a)}</div><div class="rank-info"><div class="rank-name">${a}</div><div class="rank-unit">${ad.length} aval.</div><div class="bar-bg"><div class="bar-fill" style="width:${s!=null?Math.round(s*10):0}%"></div></div></div><div class="rank-score"><div class="rank-avg">${s!=null?s.toFixed(1):'—'}</div></div></div>`;}).join('');
+  const pm={};d.forEach(x=>{const p=x.produto||'Não informado';pm[p]=(pm[p]||0)+1;});const ps=Object.entries(pm).sort((a,b)=>b[1]-a[1]);
+  dc('uprod');charts.uprod=new Chart(document.getElementById('ch-u-prod'),{type:'doughnut',data:{labels:ps.map(x=>x[0]),datasets:[{data:ps.map(x=>x[1]),backgroundColor:['#93c5fd','#6ee7b7','#fcd34d','#f9a8d4','#a78bfa','#fdba74'],borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11}}}}}});
+  const tbody=document.getElementById('u-tbody');
+  if(!d.length){tbody.innerHTML=`<tr><td colspan="9"><div class="empty">Nenhuma avaliação ainda.</div></td></tr>`;return;}
+  tbody.innerHTML=d.map(rec=>`<tr>
+    <td style="color:var(--gray-400);white-space:nowrap">${fmtD(rec.created_at)}</td>
+    <td>${rec.nome}</td><td>${rec.assistente}</td>
+    <td style="font-size:12px">${rec.produto||'—'}</td>
+    <td><span class="badge ${bc(rec.nota_clareza)}">${rec.nota_clareza}</span></td>
+    <td><span class="badge ${bc(rec.nota_acolhimento)}">${rec.nota_acolhimento}</span></td>
+    <td><span class="badge ${bc(rec.nota_assistente)}">${rec.nota_assistente}</span></td>
+    <td style="font-size:11px;color:var(--gray-400);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rec.melhoria||'—'}</td>
+    <td><button class="btn-del" onclick="deleteRec(${rec.id})">🗑 Excluir</button></td>
+  </tr>`).join('');
+}
+
+/* ===== DASHBOARD COLABORADOR ===== */
+function renderColabDash(){
+  const u=currentUser.unidade,nome=currentUser.nome;
+  const myData=allData.filter(x=>x.assistente===nome);
+  const uData=allData.filter(x=>x.unidade===u);
+  document.getElementById('colab-dash-title').textContent='Olá, '+nome.split(' ')[0]+'! 👋';
+  document.getElementById('colab-dash-sub').textContent=u+' — '+UNITS_MAP[u].city;
+  const t=myData.length,r1=myData.map(x=>x.nota_clareza),r2=myData.map(x=>x.nota_acolhimento),r3=myData.map(x=>x.nota_assistente);
+  const totalPart=myData.reduce((s,x)=>s+(parseInt(x.qtd_participantes)||1),0);
+  document.getElementById('colab-metrics').innerHTML=`
+    <div class="metric highlight-card"><div class="metric-icon">📋</div><div class="metric-label">Minhas avaliações</div><div class="metric-val">${t}</div></div>
+    <div class="metric highlight-card"><div class="metric-icon">⭐</div><div class="metric-label">Minha média</div><div class="metric-val">${t?avg(r3).toFixed(1):'—'}</div><div class="metric-sub">nota assistente</div></div>
+    <div class="metric"><div class="metric-icon">👥</div><div class="metric-label">Participantes</div><div class="metric-val">${totalPart}</div></div>
+    <div class="metric"><div class="metric-icon">🎯</div><div class="metric-label">Clareza</div><div class="metric-val">${t?avg(r1).toFixed(1):'—'}</div></div>
+    <div class="metric"><div class="metric-icon">🤝</div><div class="metric-label">Acolhimento</div><div class="metric-val">${t?avg(r2).toFixed(1):'—'}</div></div>`;
+  const uR3=uData.map(x=>x.nota_assistente);
+  dc('ccompare');charts.ccompare=new Chart(document.getElementById('ch-colab-compare'),{type:'bar',data:{labels:['Minha média','Média da unidade'],datasets:[{data:[t?+avg(r3).toFixed(2):0,uData.length?+avg(uR3).toFixed(2):0],backgroundColor:['#1a56db','#93c5fd'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:10,ticks:{stepSize:2}}}}});
+  const dist=Array(10).fill(0);r3.forEach(v=>{if(v>=1&&v<=10)dist[v-1]++;});
+  dc('cdist');charts.cdist=new Chart(document.getElementById('ch-colab-dist'),{type:'bar',data:{labels:['1','2','3','4','5','6','7','8','9','10'],datasets:[{data:dist,backgroundColor:'#6ee7b7',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  const dias=[];for(let i=13;i>=0;i--){const dt=new Date();dt.setDate(dt.getDate()-i);dias.push(dt.toISOString().slice(0,10));}
+  dc('cevo');charts.cevo=new Chart(document.getElementById('ch-colab-evo'),{type:'line',data:{labels:dias.map(d=>d.slice(5).split('-').reverse().join('/')),datasets:[{label:'Média',data:dias.map(dt=>{const dd=myData.filter(x=>x.created_at.slice(0,10)===dt);return dd.length?+avg(dd.map(x=>x.nota_assistente)).toFixed(2):null;}),borderColor:'#1a56db',backgroundColor:'rgba(26,86,219,.08)',tension:.3,fill:true,pointRadius:4,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:10,ticks:{stepSize:2}}}}});
+  const pm={};myData.forEach(x=>{const p=x.produto||'Não informado';pm[p]=(pm[p]||0)+1;});const ps=Object.entries(pm).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  dc('cprod');charts.cprod=new Chart(document.getElementById('ch-colab-prod'),{type:'bar',data:{labels:ps.map(x=>x[0]),datasets:[{data:ps.map(x=>x[1]),backgroundColor:'#a78bfa',borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+  const melhorias=myData.filter(x=>x.melhoria&&x.melhoria.trim());
+  const melDiv=document.getElementById('colab-melhorias');
+  if(!melhorias.length){melDiv.innerHTML='<div class="empty">Nenhuma sugestão recebida ainda.</div>';return;}
+  melDiv.innerHTML=melhorias.slice(0,10).map(x=>`<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px">${fmtD(x.created_at)} · ${x.nome}</div><div style="font-size:13px">"${x.melhoria}"</div></div>`).join('');
+}
+
+/* ===== REGISTROS COLABORADOR ===== */
+function renderColabReg(){
+  const nome=currentUser.nome,d=allData.filter(x=>x.assistente===nome);
+  document.getElementById('colab-reg-sub').textContent=`${d.length} avaliações recebidas`;
+  const tbody=document.getElementById('tbody-colab-reg');
+  if(!d.length){tbody.innerHTML=`<tr><td colspan="7"><div class="empty">Nenhuma avaliação ainda.</div></td></tr>`;return;}
+  tbody.innerHTML=d.map(rec=>`<tr>
+    <td style="color:var(--gray-400);white-space:nowrap">${fmtD(rec.created_at)}</td>
+    <td>${rec.nome}</td>
+    <td style="font-size:12px">${rec.produto||'—'}</td>
+    <td><span class="badge ${bc(rec.nota_clareza)}">${rec.nota_clareza}</span></td>
+    <td><span class="badge ${bc(rec.nota_acolhimento)}">${rec.nota_acolhimento}</span></td>
+    <td><span class="badge ${bc(rec.nota_assistente)}">${rec.nota_assistente}</span></td>
+    <td style="font-size:11px;color:var(--gray-400);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rec.melhoria||'—'}</td>
+  </tr>`).join('');
+}
+
+/* ===== EXCEL ===== */
+function exportExcelGeral(){
+  const d=getFiltered();if(!d.length){alert('Nenhum dado.');return;}
+  const unis=Object.keys(UNITS_MAP),wb=XLSX.utils.book_new();
+  const r1=[['Data','Hora','Unidade','Assistente','Participante','Produto','Clareza','Acolhimento','Assistente','Melhoria']];
+  d.forEach(x=>r1.push([fmtD(x.created_at),fmtT(x.created_at),x.unidade,x.assistente,x.nome,x.produto||'',x.nota_clareza,x.nota_acolhimento,x.nota_assistente,x.melhoria||'']));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r1),'Avaliações');
+  const r2=[['Unidade','Avaliações','Participantes','Média Clareza','Média Acolhimento','Média Assistente']];
+  unis.forEach(u=>{const ud=d.filter(x=>x.unidade===u);const part=ud.reduce((s,x)=>s+(parseInt(x.qtd_participantes)||1),0);r2.push([u,ud.length,part,ud.length?avg(ud.map(x=>x.nota_clareza)).toFixed(2):0,ud.length?avg(ud.map(x=>x.nota_acolhimento)).toFixed(2):0,ud.length?avg(ud.map(x=>x.nota_assistente)).toFixed(2):0]);});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r2),'Por Unidade');
+  const r3=[['Assistente','Unidade','Avaliações','Nota Média']];
+  Object.entries(UNITS_MAP).flatMap(([u,x])=>x.assistentes.map(a=>({a,u}))).forEach(({a,u})=>{const ad=d.filter(x=>x.assistente===a);r3.push([a,u,ad.length,ad.length?avg(ad.map(x=>x.nota_assistente)).toFixed(2):0]);});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r3),'Por Assistente');
+  XLSX.writeFile(wb,`boasvindas-geral-${today()}.xlsx`);
+}
+function exportExcelRegistros(){
+  const d=getRegFiltered();if(!d.length){alert('Nenhum dado.');return;}
+  const rows=[['Data','Hora','Unidade','Assistente','Participante','Produto','Clareza','Acolhimento','Assistente','Melhoria']];
+  d.forEach(x=>rows.push([fmtD(x.created_at),fmtT(x.created_at),x.unidade,x.assistente,x.nome,x.produto||'',x.nota_clareza,x.nota_acolhimento,x.nota_assistente,x.melhoria||'']));
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Registros');
+  XLSX.writeFile(wb,`boasvindas-registros-${today()}.xlsx`);
+}
+async function exportPDFRegistros(){
+  const d=getRegFiltered();if(!d.length){alert('Nenhum dado.');return;}
+  const {jsPDF}=window.jspdf;const pdf=new jsPDF('l','mm','a4');
+  pdf.setFontSize(14);pdf.setFont('helvetica','bold');pdf.text('Registros — Equipe Boas-vindas',14,16);
+  pdf.setFontSize(9);pdf.setFont('helvetica','normal');pdf.text(`Gerado em ${new Date().toLocaleString('pt-BR')} · ${d.length} registros`,14,22);
+  pdf.autoTable({head:[['Data','Unidade','Assistente','Participante','Produto','Clareza','Acolh.','Assist.','Melhoria']],body:d.map(x=>[fmtD(x.created_at),x.unidade,x.assistente,x.nome,x.produto||'—',x.nota_clareza,x.nota_acolhimento,x.nota_assistente,(x.melhoria||'').slice(0,40)]),startY:28,styles:{fontSize:8,cellPadding:3},headStyles:{fillColor:[26,86,219]},alternateRowStyles:{fillColor:[240,242,248]}});
+  pdf.save(`boasvindas-registros-${today()}.pdf`);
+}
+async function gerarPDF(){
+  const d=getFiltered();
+  const f=document.getElementById('dt-from').value,to=document.getElementById('dt-to').value;
+  const lbl=f&&to?(f===to?`Dados de ${fmtD(f+'T00:00:00')}`:`De ${fmtD(f+'T00:00:00')} até ${fmtD(to+'T00:00:00')}`):'Todos os períodos';
+  document.getElementById('pdf-lbl').textContent=lbl;document.getElementById('pdf-time').textContent=new Date().toLocaleString('pt-BR');
+  const t=d.length,r1=d.map(x=>x.nota_clareza),r2=d.map(x=>x.nota_acolhimento),r3=d.map(x=>x.nota_assistente);
+  const mg=t?((avg(r1)+avg(r2)+avg(r3))/3):0;const totalPart=d.reduce((s,x)=>s+(parseInt(x.qtd_participantes)||1),0);const tourSet=new Set(d.map(x=>x.created_at.slice(0,10)+'_'+x.unidade+'_'+x.assistente));
+  document.getElementById('pdf-metrics').innerHTML=`<div class="m"><div class="ml">Avaliações</div><div class="mv">${t}</div></div><div class="m"><div class="ml">Média geral</div><div class="mv">${t?mg.toFixed(1):'—'}</div></div><div class="m"><div class="ml">Participantes</div><div class="mv">${totalPart}</div></div><div class="m"><div class="ml">Tours</div><div class="mv">${tourSet.size}</div></div>`;
+  const unis=Object.keys(UNITS_MAP);
+  document.querySelector('#pdf-tbl-uni tbody').innerHTML=unis.map(u=>{const ud=d.filter(x=>x.unidade===u);const part=ud.reduce((s,x)=>s+(parseInt(x.qtd_participantes)||1),0);const mg2=ud.length?((avg(ud.map(x=>x.nota_clareza))+avg(ud.map(x=>x.nota_acolhimento))+avg(ud.map(x=>x.nota_assistente)))/3):null;return`<tr><td>${u}</td><td>${ud.length}</td><td>${part}</td><td>${ud.length?avg(ud.map(x=>x.nota_clareza)).toFixed(1):'—'}</td><td>${ud.length?avg(ud.map(x=>x.nota_acolhimento)).toFixed(1):'—'}</td><td>${mg2!=null?mg2.toFixed(1):'—'}</td></tr>`;}).join('');
+  document.querySelector('#pdf-tbl-ass tbody').innerHTML=Object.entries(UNITS_MAP).flatMap(([u,x])=>x.assistentes.map(a=>({a,u}))).map(({a,u})=>{const ad=d.filter(x=>x.assistente===a);const s=ad.length?avg(ad.map(x=>x.nota_assistente)):null;return`<tr><td>${a}</td><td>${u}</td><td>${ad.length}</td><td>${s!=null?s.toFixed(1):'—'}</td></tr>`;}).join('');
+  const pm={};d.forEach(x=>{const p=x.produto||'Não informado';if(!pm[p])pm[p]=[];pm[p].push(x);});
+  document.querySelector('#pdf-tbl-prod tbody').innerHTML=Object.entries(pm).sort((a,b)=>b[1].length-a[1].length).map(([p,pd])=>{const part=pd.reduce((s,x)=>s+(parseInt(x.qtd_participantes)||1),0);const mg2=((avg(pd.map(x=>x.nota_clareza))+avg(pd.map(x=>x.nota_acolhimento))+avg(pd.map(x=>x.nota_assistente)))/3).toFixed(1);return`<tr><td>${p}</td><td>${pd.length}</td><td>${part}</td><td>${mg2}</td></tr>`;}).join('');
+  document.querySelector('#pdf-tbl-avals tbody').innerHTML=d.map(x=>`<tr><td>${fmtD(x.created_at)}</td><td>${x.unidade}</td><td>${x.assistente}</td><td>${x.nome}</td><td>${x.produto||'—'}</td><td>${x.nota_clareza}</td><td>${x.nota_acolhimento}</td><td>${x.nota_assistente}</td></tr>`).join('');
+  const el=document.getElementById('pdf-report');el.style.display='block';el.style.left='-9999px';
+  try{
+    const canvas=await html2canvas(el,{scale:1.5,useCORS:true,backgroundColor:'#ffffff'});
+    const {jsPDF}=window.jspdf;const pdf=new jsPDF('p','mm','a4');
+    const pW=pdf.internal.pageSize.getWidth(),pH=pdf.internal.pageSize.getHeight();
+    const iW=canvas.width,iH=canvas.height;const pageH=pH*(iW/pW);let yPos=0;
+    while(yPos<iH){if(yPos>0)pdf.addPage();const rem=Math.min(pageH,iH-yPos);const tc=document.createElement('canvas');tc.width=iW;tc.height=rem;tc.getContext('2d').drawImage(canvas,0,yPos,iW,rem,0,0,iW,rem);pdf.addImage(tc.toDataURL('image/jpeg',.92),'JPEG',0,0,pW,rem*(pW/iW));yPos+=pageH;}
+    pdf.save(`boasvindas-dashboard-${today()}.pdf`);
+  }finally{el.style.display='none';}
+}
+</script>
+</body>
+</html>
