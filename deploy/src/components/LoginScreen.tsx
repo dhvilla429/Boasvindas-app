@@ -19,7 +19,8 @@ import {
   Info, 
   CheckCircle2,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  Search
 } from "lucide-react";
 
 interface LoginScreenProps {
@@ -47,7 +48,7 @@ export const CREDENTIALS_DEMO = [
     unidadeLabel: "Unidade Vila Prudente",
     unidadeValue: "Vila Prudente",
     usuarios: [
-      { nome: "Gustavo de Assis", senha: "vila123" },
+      { nome: "Gustavo Assis", senha: "vila123" },
       { nome: "Catherine Dias", senha: "vila123" }
     ]
   },
@@ -77,6 +78,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [showHelp, setShowHelp] = useState(false);
 
   const [activeQrUnit, setActiveQrUnit] = useState("LAPA");
+  const [activeQrTab, setActiveQrTab] = useState<"unit" | "collaborator">("unit");
+  const [activeQrCollaborator, setActiveQrCollaborator] = useState("");
+  const [collaboratorSearch, setCollaboratorSearch] = useState("");
   const [isZoomed, setIsZoomed] = useState(false);
 
   const UNIDADES_QR = [
@@ -114,9 +118,33 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     }
   ];
 
+  const allCollaborators = React.useMemo(() => {
+    const list: { nome: string; unidade: string; unidadeLabel: string }[] = [];
+    getStoredCredentials().forEach(c => {
+      if (c.unidadeValue !== "TODAS") {
+        c.usuarios.forEach(u => {
+          list.push({
+            nome: u.nome,
+            unidade: c.unidadeValue,
+            unidadeLabel: c.unidadeLabel.replace("Unidade ", ""),
+          });
+        });
+      }
+    });
+    return list;
+  }, []);
+
+  const filteredCollaborators = React.useMemo(() => {
+    const term = collaboratorSearch.trim().toLowerCase();
+    if (!term) return allCollaborators;
+    return allCollaborators.filter(c => c.nome.toLowerCase().includes(term));
+  }, [allCollaborators, collaboratorSearch]);
+
   const currentQrData = UNIDADES_QR.find(u => u.nome === activeQrUnit) || UNIDADES_QR[0];
   const hostUrl = typeof window !== "undefined" ? window.location.origin : "";
-  const targetUrl = `${hostUrl}?unidade=${encodeURIComponent(currentQrData.urlTag)}`;
+  const targetUrl = activeQrCollaborator
+    ? `${hostUrl}?unidade=${encodeURIComponent(currentQrData.urlTag)}&lider=${encodeURIComponent(activeQrCollaborator)}`
+    : `${hostUrl}?unidade=${encodeURIComponent(currentQrData.urlTag)}`;
   const qrCodeImgSrc = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(targetUrl)}`;
 
   const handlePrint = (unitName: string, destinationUrl: string) => {
@@ -192,7 +220,10 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                 Pesquisa de Avaliação do Tour
               </span>
               <h1 style="margin-top: 15px;">UNIDADE ${unitName.toUpperCase()}</h1>
-              <p class="subtitle">Equipe Boas-Vindas • TP TOUR</p>
+              <p class="subtitle">
+                ${activeQrCollaborator ? `Guia: ${activeQrCollaborator.toUpperCase()}<br/>` : ""}
+                Equipe Boas-Vindas • TP TOUR
+              </p>
               
               <div class="qr-frame">
                 <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(destinationUrl)}" alt="QR Code" />
@@ -200,7 +231,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
               
               <p class="instructions">
                 Aponte a câmera do seu celular para o QR Code acima<br/>
-                e responda nossa rápida Pesquisa de Avaliação pós-tour!
+                e responda nossa rápida Pesquisa de Avaliação pós-tour${activeQrCollaborator ? ` conduzido por <strong>${activeQrCollaborator}</strong>` : ""}!
               </p>
               
               <p class="footer-text">
@@ -547,41 +578,170 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-stretch">
           
-          {/* Seletor de Unidades em botões verticais */}
+          {/* Seletor de Unidades e Colaboradores em Abas */}
           <div className="md:col-span-6 flex flex-col justify-between space-y-4">
-            <div className="space-y-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                Passo 1: Selecione a Unidade Operacional
-              </span>
+            <div className="space-y-4">
               
-              <div className="grid grid-cols-1 gap-2.5">
-                {UNIDADES_QR.map((item) => {
-                  const isActive = activeQrUnit === item.nome;
-                  return (
-                    <button
-                      key={item.nome}
-                      type="button"
-                      onClick={() => setActiveQrUnit(item.nome)}
-                      className={`p-4 rounded-2xl border text-left cursor-pointer transition-all duration-150 flex items-center justify-between group ${
-                        isActive
-                          ? "bg-slate-950 border-slate-950 text-white shadow-md shadow-slate-950/10"
-                          : "bg-white border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/50"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 w-full min-w-0">
-                        <span className={`w-3 h-3 rounded-full ${item.corPinta} shrink-0 ring-4 ${isActive ? "ring-slate-800" : "ring-slate-100"}`} />
-                        <div className="min-w-0">
-                          <p className="text-xs font-black font-mono tracking-tight uppercase">{item.titulo}</p>
-                          <p className={`text-[10px] truncate mt-0.5 ${isActive ? "text-slate-400" : "text-slate-500"}`}>
-                            {item.nome} • Canal Direto de Feedback
-                          </p>
-                        </div>
-                      </div>
-                      <ChevronRight className={`w-4 h-4 shrink-0 transition-transform duration-150 ${isActive ? "translate-x-1 text-amber-400" : "text-slate-400 group-hover:translate-x-0.5"}`} />
-                    </button>
-                  );
-                })}
+              {/* Tabs selector */}
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveQrTab("unit");
+                    setActiveQrCollaborator("");
+                  }}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all text-center cursor-pointer ${
+                    activeQrTab === "unit"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  Pesquisa por Unidade
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveQrTab("collaborator");
+                    if (!activeQrCollaborator && allCollaborators.length > 0) {
+                      const first = allCollaborators[0];
+                      setActiveQrCollaborator(first.nome);
+                      setActiveQrUnit(first.unidade);
+                    }
+                  }}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all text-center cursor-pointer ${
+                    activeQrTab === "collaborator"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  Pesquisa por Colaborador
+                </button>
               </div>
+
+              {activeQrTab === "unit" ? (
+                <div className="space-y-3">
+                  <span className="text-[10px] font-bold text-slate-400 : text-slate-500 uppercase tracking-wider block">
+                    Passo 1: Selecione a Unidade Geral
+                  </span>
+                  
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {UNIDADES_QR.map((item) => {
+                      const isActive = activeQrUnit === item.nome && !activeQrCollaborator;
+                      return (
+                        <button
+                          key={item.nome}
+                          type="button"
+                          onClick={() => {
+                            setActiveQrUnit(item.nome);
+                            setActiveQrCollaborator("");
+                          }}
+                          className={`p-4 rounded-2xl border text-left cursor-pointer transition-all duration-150 flex items-center justify-between group ${
+                            isActive
+                              ? "bg-slate-950 border-slate-950 text-white shadow-md shadow-slate-950/10"
+                              : "bg-white border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 w-full min-w-0">
+                            <span className={`w-3 h-3 rounded-full ${item.corPinta} shrink-0 ring-4 ${isActive ? "ring-slate-800" : "ring-slate-100"}`} />
+                            <div className="min-w-0">
+                              <p className="text-xs font-black font-mono tracking-tight uppercase">{item.titulo}</p>
+                              <p className={`text-[10px] truncate mt-0.5 ${isActive ? "text-slate-400" : "text-slate-500"}`}>
+                                {item.nome} • Canal Direto de Feedback
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight className={`w-4 h-4 shrink-0 transition-transform duration-150 ${isActive ? "translate-x-1 text-amber-400" : "text-slate-400 group-hover:translate-x-0.5"}`} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Passo 1: Busque o Colaborador e sua Unidade
+                  </span>
+                  
+                  {/* Search bar */}
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-2.5 text-slate-400 pointer-events-none">
+                      <Search className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Pesquisar colaborador por nome..."
+                      value={collaboratorSearch}
+                      onChange={(e) => setCollaboratorSearch(e.target.value)}
+                      className="w-full pl-10 pr-16 py-2 bg-slate-50 hover:bg-slate-100/50 border border-slate-200 focus:border-slate-400 rounded-xl text-xs text-slate-800 outline-none transition"
+                    />
+                    {collaboratorSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setCollaboratorSearch("")}
+                        className="absolute right-3.5 top-2 text-[10px] uppercase font-bold text-slate-400 hover:text-slate-650 font-mono tracking-tight h-8"
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Collaborators List */}
+                  <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto pr-1">
+                    {filteredCollaborators.length > 0 ? (
+                      filteredCollaborators.map((colab) => {
+                        const isSelected = activeQrCollaborator === colab.nome;
+                        
+                        // Compute Unit Badge custom style
+                        let badgeBg = "bg-emerald-50 text-emerald-800 border-emerald-150";
+                        if (colab.unidade === "Vila Prudente") badgeBg = "bg-indigo-50 text-indigo-800 border-indigo-150";
+                        if (colab.unidade === "PRN") badgeBg = "bg-amber-50 text-amber-800 border-amber-150";
+                        if (colab.unidade === "SGA") badgeBg = "bg-sky-50 text-sky-800 border-sky-150";
+
+                        return (
+                          <button
+                            key={colab.nome}
+                            type="button"
+                            onClick={() => {
+                              setActiveQrCollaborator(colab.nome);
+                              setActiveQrUnit(colab.unidade);
+                            }}
+                            className={`p-3 rounded-xl border text-left cursor-pointer transition-all duration-100 flex items-center justify-between group ${
+                              isSelected
+                                ? "bg-slate-950 border-slate-950 text-white shadow-md shadow-slate-950/10"
+                                : "bg-white border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/40"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 w-full min-w-0">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold font-mono uppercase tracking-wider shrink-0 duration-150 ${
+                                isSelected ? "bg-amber-500 text-slate-950" : "bg-slate-100 text-slate-600"
+                              }`}>
+                                {colab.nome.split(" ").map(n => n[0]).join("").substring(0, 2)}
+                              </div>
+                              
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold truncate">{colab.nome}</p>
+                                <p className={`text-[9px] font-mono tracking-tight uppercase ${isSelected ? "text-slate-400" : "text-slate-400"}`}>
+                                  Condutor • {colab.unidadeLabel}
+                                </p>
+                              </div>
+                            </div>
+
+                            <span className={`text-[9.5px] uppercase font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                              isSelected ? "bg-white/15 text-white border-white/20" : badgeBg
+                            }`}>
+                              {colab.unidade}
+                            </span>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="text-center py-8 text-slate-400 text-xs">
+                        Nenhum colaborador encontrado com "{collaboratorSearch}"
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bg-amber-500/5 border border-amber-500/20 p-4 rounded-2xl text-slate-600 space-y-2 text-xs">
@@ -616,14 +776,31 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
               </div>
             </div>
 
-            <div className="mt-5 space-y-1 w-full">
-              <div className="inline-flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1 rounded-full text-xs font-bold font-mono">
-                <span className={`w-2 h-2 rounded-full ${currentQrData.corPinta}`} />
-                <span className="text-slate-800 text-[10px] tracking-tight uppercase">{currentQrData.titulo}</span>
-              </div>
-              <p className="text-[11px] text-slate-500 max-w-xs mx-auto leading-relaxed pt-2">
-                {currentQrData.descricao}
-              </p>
+            <div className="mt-5 space-y-1.5 w-full">
+              {activeQrCollaborator ? (
+                <>
+                  <div className="inline-flex items-center gap-1.5 bg-amber-500 text-slate-950 px-3 py-1 rounded-full text-[10px] font-mono font-black uppercase tracking-wider">
+                    <User className="w-3 h-3 shrink-0" />
+                    <span>Vinculado: {activeQrCollaborator}</span>
+                  </div>
+                  <p className="text-xs font-bold text-slate-800 mt-1 uppercase tracking-tight font-mono">
+                    Unidade {currentQrData.nome}
+                  </p>
+                  <p className="text-[11px] text-slate-500 max-w-xs mx-auto leading-relaxed pt-1">
+                    Escanear para responder à Pesquisa de Avaliação pós-tour pré-preenchida para o guia <strong>{activeQrCollaborator}</strong> na unidade <strong>{currentQrData.nome}</strong>.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="inline-flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1 rounded-full text-xs font-bold font-mono">
+                    <span className={`w-2 h-2 rounded-full ${currentQrData.corPinta}`} />
+                    <span className="text-slate-800 text-[10px] tracking-tight uppercase">{currentQrData.titulo}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 max-w-xs mx-auto leading-relaxed pt-2">
+                    {currentQrData.descricao}
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Ações para o QR Code */}
@@ -657,13 +834,20 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           <div className="bg-white rounded-3xl p-8 max-w-md w-full border border-slate-200 shadow-2xl space-y-6 text-center cursor-default animate-in fade-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
             <div className="space-y-2">
               <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider font-mono ${currentQrData.cor} border`}>
-                QR Code de Autoatendimento
+                {activeQrCollaborator ? "QR Code do Colaborador" : "QR Code de Autoatendimento"}
               </span>
               <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight pt-2">
-                {currentQrData.titulo}
+                {activeQrCollaborator ? activeQrCollaborator : currentQrData.titulo}
               </h3>
+              {activeQrCollaborator && (
+                <p className="text-xs font-bold text-amber-600 uppercase tracking-wider font-mono">
+                  Unidade {currentQrData.nome}
+                </p>
+              )}
               <p className="text-slate-500 text-xs leading-relaxed max-w-xs mx-auto">
-                Aponte a câmera do seu celular para escanear e iniciar a pesquisa correspondente diretamente.
+                {activeQrCollaborator
+                  ? `Aponte a câmera do seu celular para responder à Pesquisa de Avaliação pós-tour do guia ${activeQrCollaborator} na unidade ${currentQrData.nome}.`
+                  : "Aponte a câmera do seu celular para escanear e iniciar a pesquisa correspondente diretamente."}
               </p>
             </div>
 

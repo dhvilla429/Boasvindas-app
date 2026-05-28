@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { SurveySubmission, UserSession } from "../types";
 import { exportToCSV, formatDateToPTBR } from "../utils";
 import { INITIAL_PRODUCTS, INITIAL_LEADERS } from "../data";
@@ -106,6 +106,132 @@ export default function DatabaseGrid({
   const [pptSlideIndex, setPptSlideIndex] = useState(0);
   const [pptCopied, setPptCopied] = useState(false);
   const [copiedAll, setCopiedAll] = useState(false);
+
+  // States specific to Jaciana Melo's administrative improvement plan
+  const [improvementPlan, setImprovementPlan] = useState<Array<{
+    id: string;
+    title: string;
+    description: string;
+    category: "Controle de Tours" | "Rotina Adm" | "Qualidade" | "Comunicação";
+    status: "planejado" | "execucao" | "eficaz";
+    targetMetric: string;
+    expectedImpact: string;
+    dateCreated: string;
+  }>>(() => {
+    try {
+      const stored = localStorage.getItem("jaciana_improvement_plan");
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return [
+      {
+        id: "ip-1",
+        title: "Divisão Estratégica Automática de Levas (PRN)",
+        description: "Estruturar divisão de clientes por levas baseada no tempo médio real de deslocamento dos guias Rafaela Alessandra e Vinicius Lima, mitigando conflitos de trânsito interno.",
+        category: "Controle de Tours",
+        status: "execucao",
+        targetMetric: "Tempo de espera da leva < 10min",
+        expectedImpact: "Elevar NPS geral e satisfatoriedade do tour no PRN",
+        dateCreated: "2026-05-27"
+      },
+      {
+        id: "ip-2",
+        title: "Protocolo de Contra-Auditoria Preventiva (Notas < 8)",
+        description: "Implementar alerta imediato de insatisfação para que a assessoria consiga intervir e retratar problemas operacionais logo após o encerramento do tour.",
+        category: "Qualidade",
+        status: "execucao",
+        targetMetric: "100% de detratores tratados no dia",
+        expectedImpact: "Redução de avaliações negativas na plataforma integrada",
+        dateCreated: "2026-05-27"
+      },
+      {
+        id: "ip-3",
+        title: "Automatização de Consolidado Operacional Diário",
+        description: "Padronizar o envio das métricas gerais, contagem de pax e destaques de feedback ao final de cada expediente para agilizar a prestação de contas à gestão geral.",
+        category: "Rotina Adm",
+        status: "eficaz",
+        targetMetric: "Envio diário pontual até às 18h",
+        expectedImpact: "Ganho de eficiência e redução de retrabalho com planilhas manuais",
+        dateCreated: "2026-05-27"
+      },
+      {
+        id: "ip-4",
+        title: "Canal de Alinhamento de Campo Instantâneo",
+        description: "Criar canal direto de suporte e compartilhamento de status operacional diário (rádio/chat) para alertar guias sobre mudanças meteorológicas ou restrições de horários de atração.",
+        category: "Comunicação",
+        status: "planejado",
+        targetMetric: "Sincronização reativa de escala em tempo real",
+        expectedImpact: "Maior flexibilidade operacional diante de intempéries",
+        dateCreated: "2026-05-27"
+      }
+    ];
+  });
+
+  const [newPlanTitle, setNewPlanTitle] = useState("");
+  const [newPlanDesc, setNewPlanDesc] = useState("");
+  const [newPlanCategory, setNewPlanCategory] = useState<"Controle de Tours" | "Rotina Adm" | "Qualidade" | "Comunicação">("Controle de Tours");
+  const [newPlanMetric, setNewPlanMetric] = useState("");
+  const [newPlanImpact, setNewPlanImpact] = useState("");
+  const [planFilter, setPlanFilter] = useState<"TODOS" | "planejado" | "execucao" | "eficaz">("TODOS");
+  const [isAddingPlanItem, setIsAddingPlanItem] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("jaciana_improvement_plan", JSON.stringify(improvementPlan));
+    } catch (e) {}
+  }, [improvementPlan]);
+
+  const handleAddPlanItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPlanTitle.trim() || !newPlanDesc.trim()) return;
+    const newItem = {
+      id: "ip-" + Date.now(),
+      title: newPlanTitle.trim(),
+      description: newPlanDesc.trim(),
+      category: newPlanCategory,
+      status: "planejado" as const,
+      targetMetric: newPlanMetric.trim() || "A definir",
+      expectedImpact: newPlanImpact.trim() || "A definir",
+      dateCreated: new Date().toISOString().split("T")[0]
+    };
+    setImprovementPlan(prev => [newItem, ...prev]);
+    setNewPlanTitle("");
+    setNewPlanDesc("");
+    setNewPlanMetric("");
+    setNewPlanImpact("");
+    setIsAddingPlanItem(false);
+
+    try {
+      const stored = localStorage.getItem("jaciana_action_counter");
+      const current = stored ? parseInt(stored, 10) : 0;
+      localStorage.setItem("jaciana_action_counter", (current + 1).toString());
+    } catch (e) {}
+  };
+
+  const handleTogglePlanStatus = (id: string) => {
+    setImprovementPlan(prev => prev.map(item => {
+      if (item.id === id) {
+        const nextStatus = item.status === "planejado" ? "execucao" : item.status === "execucao" ? "eficaz" : "planejado";
+        return { ...item, status: nextStatus };
+      }
+      return item;
+    }));
+
+    try {
+      const stored = localStorage.getItem("jaciana_action_counter");
+      const current = stored ? parseInt(stored, 10) : 0;
+      localStorage.setItem("jaciana_action_counter", (current + 1).toString());
+    } catch (e) {}
+  };
+
+  const handleDeletePlanItem = (id: string) => {
+    setImprovementPlan(prev => prev.filter(item => item.id !== id));
+
+    try {
+      const stored = localStorage.getItem("jaciana_action_counter");
+      const current = stored ? parseInt(stored, 10) : 0;
+      localStorage.setItem("jaciana_action_counter", (current + 1).toString());
+    } catch (e) {}
+  };
 
   // States for Editing Row
   const [editNome, setEditNome] = useState("");
@@ -365,8 +491,8 @@ AÇÕES DEFINIDAS COM BASE NAS AMOSTRAS:
 
     const randomName = randomNames[Math.floor(Math.random() * randomNames.length)];
     const randomAge = Math.floor(Math.random() * 32) + 18; // 18-50
-    const randomLeader = INITIAL_LEADERS[Math.floor(Math.random() * INITIAL_LEADERS.length)];
-    const randomProduct = INITIAL_PRODUCTS[Math.floor(Math.random() * INITIAL_PRODUCTS.length)];
+    const randomLeader = leaders.length > 0 ? leaders[Math.floor(Math.random() * leaders.length)] : "Líder Coletado";
+    const randomProduct = products.length > 0 ? products[Math.floor(Math.random() * products.length)] : "Tour Coletado";
     const randomPartCount = Math.floor(Math.random() * 30) + 15; // 15-45
     const randomDay = Math.floor(Math.random() * 12) + 10; // May 10th to 21st
     const scoreClareza = Math.floor(Math.random() * 3) + 8; // 8-10
@@ -509,6 +635,349 @@ AÇÕES DEFINIDAS COM BASE NAS AMOSTRAS:
           </button>
         </div>
       </div>
+
+      {/* EXCLUSIVE RECURSO DE DEPARTAMENTO DE MELHORIA CONTÍNUA PARA JACIANA MELO */}
+      {session?.nome === "Jaciana Melo" && (
+        <div id="jaciana-improvement-tab-panel" className="bg-slate-50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-850 rounded-3xl p-6 space-y-6 shadow-sm animate-in fade-in duration-500">
+          
+          {/* Header Row */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/60 dark:border-slate-850 pb-5">
+            <div className="flex items-start gap-3.5 text-left">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 dark:bg-amber-955 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-2xl shadow-3xs shrink-0">
+                🚀
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm md:text-base font-black text-slate-850 dark:text-amber-400 uppercase tracking-wider leading-none">
+                    Plano de Melhorias Contínuas de Administração & Controle de Tours
+                  </h3>
+                  <span className="bg-amber-100 dark:bg-amber-950/60 border border-amber-200/30 px-2.5 py-0.5 rounded-full text-[9px] text-amber-700 dark:text-amber-400 font-black tracking-widest uppercase font-mono">
+                    Supervisor PRN & Auditoria
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                  Ações táticas e de controle formuladas para otimizar os fluxos conduzidos por <strong>Rafaela Alessandra</strong> e <strong>Vinicius Lima</strong>, com foco em eliminar esperas por levas e garantir excelência no acolhimento.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsAddingPlanItem(!isAddingPlanItem)}
+              className="px-4 py-2 bg-slate-900 text-white hover:bg-black font-extrabold text-[11px] rounded-xl shadow-sm transition-all flex items-center gap-2 uppercase tracking-wider shrink-0 cursor-pointer text-center justify-center border border-slate-750"
+            >
+              {isAddingPlanItem ? (
+                <>
+                  <X className="w-3.5 h-3.5 text-rose-450" />
+                  Fechar Formulário
+                </>
+              ) : (
+                <>
+                  <PlusCircle className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  Nova Iniciativa
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* KPI Dashboard inside Database Tab */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 p-4 rounded-2xl shadow-3xs text-left">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-[10px] uppercase font-black tracking-widest font-mono">Status da Eficácia</span>
+                <Award className="w-4 h-4 text-emerald-500" />
+              </div>
+              <div className="flex items-baseline gap-1.5 mt-2">
+                <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                  {improvementPlan.length > 0 ? Math.round((improvementPlan.filter(i => i.status === "eficaz").length / improvementPlan.length) * 100) : 0}%
+                </span>
+                <span className="text-slate-405 text-xs font-semibold">concluído</span>
+              </div>
+              <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
+                <div 
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                  style={{ 
+                    width: `${improvementPlan.length > 0 ? (improvementPlan.filter(i => i.status === "eficaz").length / improvementPlan.length) * 100 : 0}%`
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 p-4 rounded-2xl shadow-3xs text-left">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-[10px] uppercase font-black tracking-widest font-mono">Em Execução Ativa</span>
+                <TrendingUp className="w-4 h-4 text-indigo-500" />
+              </div>
+              <div className="flex items-baseline gap-1.5 mt-2">
+                <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                  {improvementPlan.filter(i => i.status === "execucao").length}
+                </span>
+                <span className="text-slate-405 text-xs font-bold">ações ativas</span>
+              </div>
+              <p className="text-[9.5px] text-slate-400 mt-2 leading-tight">Melhorias sendo mensuradas em tempo real com os participantes.</p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 p-4 rounded-2xl shadow-3xs text-left">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-[10px] uppercase font-black tracking-widest font-mono">Total Planejadas</span>
+                <Calendar className="w-4 h-4 text-amber-500" />
+              </div>
+              <div className="flex items-baseline gap-1.5 mt-2">
+                <span className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
+                  {improvementPlan.filter(i => i.status === "planejado").length}
+                </span>
+                <span className="text-slate-405 text-xs font-bold font-mono">itens backlog</span>
+              </div>
+              <p className="text-[9.5px] text-slate-400 mt-2 leading-tight">Projetos prontos para início de validação nas próximas levas.</p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 p-4 rounded-2xl shadow-3xs text-left">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-[10px] uppercase font-black tracking-widest font-mono">Metas no Roteiro</span>
+                <Zap className="w-4 h-4 text-purple-500 animate-pulse" />
+              </div>
+              <div className="flex items-baseline gap-1.5 mt-2">
+                <span className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono">
+                  {improvementPlan.length}
+                </span>
+                <span className="text-slate-405 text-xs font-bold">iniciativas</span>
+              </div>
+              <p className="text-[9.5px] text-slate-400 mt-2 leading-tight">Capacidade operacional instalada de controle e assessoria.</p>
+            </div>
+
+          </div>
+
+          {/* Form Expansion box */}
+          {isAddingPlanItem && (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-2xl p-5 shadow-xs text-left animate-in duration-300 slide-in-from-top-3">
+              <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                <PlusCircle className="w-4 h-4 text-amber-500" /> Propor Nova Iniciativa de Controle Adm
+              </h4>
+              <form onSubmit={handleAddPlanItem} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div className="md:col-span-8">
+                    <label className="block text-[10.5px] font-black uppercase text-slate-400 tracking-wider mb-1">Título da Ação de Melhoria</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: Refinamento de Escala nos Intervalos Operacionais"
+                      value={newPlanTitle}
+                      onChange={(e) => setNewPlanTitle(e.target.value)}
+                      required
+                      className="w-full text-xs px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-white font-medium"
+                    />
+                  </div>
+                  
+                  <div className="md:col-span-4">
+                    <label className="block text-[10.5px] font-black uppercase text-slate-400 tracking-wider mb-1">Categoria de Atividade</label>
+                    <select
+                      value={newPlanCategory}
+                      onChange={(e) => setNewPlanCategory(e.target.value as any)}
+                      className="w-full text-xs px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 focus:ring-1 focus:ring-amber-500 focus:outline-none font-bold text-slate-750 dark:text-slate-300 cursor-pointer"
+                    >
+                      <option value="Controle de Tours">Controle de Tours (Levas)</option>
+                      <option value="Rotina Adm">Rotina Adm (Relatórios)</option>
+                      <option value="Qualidade">Qualidade (Auditorias)</option>
+                      <option value="Comunicação">Comunicação (Geral)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10.5px] font-black uppercase text-slate-400 tracking-wider mb-1">Descrição Detalhada e Método de Implementação</label>
+                  <textarea 
+                    rows={3}
+                    placeholder="Descreva como a melhoria será testada e quais guias/processos são impactados diretamente..."
+                    value={newPlanDesc}
+                    onChange={(e) => setNewPlanDesc(e.target.value)}
+                    required
+                    className="w-full text-xs px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-white font-medium resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10.5px] font-black uppercase text-slate-400 tracking-wider mb-1">Meta Métrica Estimada (Como medir?)</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: Tempo de transição de guias < 5min"
+                      value={newPlanMetric}
+                      onChange={(e) => setNewPlanMetric(e.target.value)}
+                      className="w-full text-xs px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10.5px] font-black uppercase text-slate-400 tracking-wider mb-1">Impacto de Qualidade Esperado</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: Ganho de 0.5 ponto na nota de Acolhimento"
+                      value={newPlanImpact}
+                      onChange={(e) => setNewPlanImpact(e.target.value)}
+                      className="w-full text-xs px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 focus:ring-1 focus:ring-amber-500 focus:outline-none dark:text-white font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingPlanItem(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-600 font-black text-xs text-slate-950 rounded-xl shadow-xs transition cursor-pointer"
+                  >
+                    Adicionar Iniciativa ao Painel
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Interactive Initiatives Grid */}
+          <div className="space-y-4 text-left">
+            
+            {/* Filter Tabs & Title */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/50 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase text-slate-700 dark:text-slate-300 tracking-wider">
+                  Roteiro de Diretrizes e Ações Práticas
+                </span>
+                <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full text-slate-500 dark:text-slate-400 font-extrabold font-mono">
+                  {improvementPlan.filter(i => planFilter === "TODOS" ? true : i.status === planFilter).length} listadas
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950/60 border border-slate-200/50 p-0.5 rounded-xl select-none self-start sm:self-auto">
+                {(["TODOS", "planejado", "execucao", "eficaz"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setPlanFilter(tab)}
+                    className={`px-3 py-1 rounded-lg text-[9.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      planFilter === tab
+                        ? "bg-amber-500 text-slate-950 font-black shadow-3xs"
+                        : "text-slate-450 dark:text-slate-400 hover:text-slate-750"
+                    }`}
+                  >
+                    {tab === "TODOS" ? "Todas" : tab === "planejado" ? "Backlog" : tab === "execucao" ? "Ativas" : "Eficazes"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* List box wrapper */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {improvementPlan.filter(i => planFilter === "TODOS" ? true : i.status === planFilter).length === 0 ? (
+                <div className="col-span-2 py-12 text-center text-slate-400 text-xs italic bg-white dark:bg-slate-900 border border-slate-150 border-dashed rounded-2xl">
+                  Nenhuma melhoria operacional cadastrada neste status de acompanhamento.
+                </div>
+              ) : (
+                improvementPlan
+                  .filter(i => planFilter === "TODOS" ? true : i.status === planFilter)
+                  .map((item) => {
+                    const statusColor = 
+                      item.status === "eficaz" ? "bg-emerald-50/40 border-emerald-200 text-slate-800 dark:bg-emerald-950/10 dark:border-emerald-900/40" :
+                      item.status === "execucao" ? "bg-indigo-50/20 border-indigo-200 text-slate-900 dark:bg-indigo-955/10 dark:border-indigo-950/30" :
+                      "bg-slate-52 border-slate-200 text-slate-500 dark:bg-slate-900 dark:border-slate-850";
+
+                    const badgeColor = 
+                      item.category === "Controle de Tours" ? "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-350" :
+                      item.category === "Rotina Adm" ? "bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-350" :
+                      item.category === "Qualidade" ? "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-350" :
+                      "bg-amber-100 text-amber-800 dark:bg-amber-955/40 dark:text-amber-400";
+
+                    return (
+                      <div 
+                        key={item.id}
+                        className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 transition-all hover:shadow-3xs duration-200 ${statusColor}`}
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-3 font-sans">
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest font-mono ${badgeColor}`}>
+                              {item.category}
+                            </span>
+
+                            <div className="flex items-center gap-1.5 font-mono">
+                              <span className="text-[9.5px] text-slate-400">{item.dateCreated}</span>
+                              <button
+                                onClick={() => handleDeletePlanItem(item.id)}
+                                className="p-1 hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-955 rounded-lg text-slate-405 transition cursor-pointer"
+                                title="Excluir item de melhoria"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5 flex items-start gap-2.5">
+                            {/* Checkbox trigger to quick toggle / cycle */}
+                            <button
+                              onClick={() => handleTogglePlanStatus(item.id)}
+                              className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 cursor-pointer hover:scale-105 transition ${
+                                item.status === "eficaz"
+                                  ? "bg-emerald-500 border-emerald-600 text-white shadow-2xs"
+                                  : item.status === "execucao"
+                                  ? "bg-indigo-600 border-indigo-700 text-white"
+                                  : "bg-white border-slate-350 dark:bg-slate-800"
+                              }`}
+                              title="Clique para alternar o progresso ou certificar eficácia desta meta!"
+                            >
+                              {item.status === "eficaz" && <Check className="w-4 h-4 stroke-[3]" />}
+                              {item.status === "execucao" && <span className="w-2 h-2 rounded-full bg-white block animate-ping" />}
+                            </button>
+
+                            <div className="space-y-1 min-w-0 flex-1">
+                              <h4 className={`text-xs font-extrabold leading-tight ${item.status === "eficaz" ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-white"}`}>
+                                {item.title}
+                              </h4>
+                              <p className="text-[11.5px] leading-relaxed text-slate-500 dark:text-slate-400">
+                                {item.description}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Extra targets info inside card */}
+                        <div className="pt-3.5 border-t border-slate-200 dark:border-slate-850 flex flex-col gap-2 bg-slate-50/50 dark:bg-slate-950/20 p-2.5 rounded-xl font-sans text-[11px] leading-normal">
+                          <div className="flex justify-between flex-wrap gap-1">
+                            <span className="text-slate-404 font-medium">Meta / Métrica Alvo:</span>
+                            <strong className="text-slate-700 dark:text-slate-300 font-bold">{item.targetMetric}</strong>
+                          </div>
+                          <div className="flex justify-between flex-wrap gap-1">
+                            <span className="text-slate-404 font-medium">Impacto Geral:</span>
+                            <strong className="text-slate-700 dark:text-slate-300 font-bold truncate max-w-[210px]" title={item.expectedImpact}>{item.expectedImpact}</strong>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-[10px] text-slate-400 font-bold font-mono">Progresso da Ação:</span>
+                          <button
+                            onClick={() => handleTogglePlanStatus(item.id)}
+                            className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg border shadow-3xs cursor-pointer transition ${
+                              item.status === "eficaz"
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/45 dark:text-emerald-400"
+                                : item.status === "execucao"
+                                ? "bg-indigo-100 text-indigo-700 border-indigo-305 dark:bg-indigo-950/45 dark:text-indigo-400 font-black animate-pulse"
+                                : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800"
+                            }`}
+                          >
+                            {item.status === "eficaz" ? "✓ Eficaz (Concluído)" : item.status === "execucao" ? "⚡ Em Execução" : "📋 Planejado / Backlog"}
+                          </button>
+                        </div>
+
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
       {/* DYNAMIC DASHBOARD PANEL FOR INDIVIDUAL COLLABORATORS */}
       {showDashboard && (

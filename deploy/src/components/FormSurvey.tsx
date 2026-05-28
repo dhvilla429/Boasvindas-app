@@ -1,6 +1,7 @@
 import React, { useState, useTransition } from "react";
 import { SurveySubmission, UserSession } from "../types";
 import { INITIAL_PRODUCTS, INITIAL_LEADERS } from "../data";
+import { getStoredCredentials } from "../utils/auth";
 import { FileText, CheckCircle2, User, Users, Calendar, Award, Star, ThumbsUp } from "lucide-react";
 
 interface FormSurveyProps {
@@ -24,9 +25,26 @@ export default function FormSurvey({
   const [liderEducador, setLiderEducador] = useState(prefilledData?.liderEducador || "");
   const [produto, setProduto] = useState(prefilledData?.produto || "");
   const [participantes, setParticipantes] = useState(prefilledData?.participantes ? String(prefilledData.participantes) : "");
-  const [assistente, setAssistente] = useState(session ? session.nome.toUpperCase() : "VINICIUS");
-  const [unidade, setUnidade] = useState(session ? (session.unidade === "TODAS" ? "LAPA" : session.unidade) : "PRN");
+  const [assistente, setAssistente] = useState(() => {
+    if (prefilledData?.assistente) return prefilledData.assistente.toUpperCase();
+    return session && !session.isVisitor && session.nome !== "Jaciana Melo" ? session.nome.toUpperCase() : "";
+  });
+  const [unidade, setUnidade] = useState(() => {
+    if (prefilledData?.unidade) return prefilledData.unidade;
+    return session ? (session.unidade === "TODAS" ? "LAPA" : session.unidade) : "PRN";
+  });
   const [date, setDate] = useState(prefilledData?.date || new Date().toISOString().split("T")[0]);
+  const [isSecondLeva, setIsSecondLeva] = useState(false);
+
+  // Compute unit collaborators for suggestions (excluding Jaciana Melo who does not conduct tours)
+  const unitCollaborators = React.useMemo(() => {
+    const creds = getStoredCredentials();
+    const found = creds.find(c => c.unidadeValue.toUpperCase() === unidade.toUpperCase());
+    if (!found) return [];
+    return found.usuarios
+      .map(u => u.nome)
+      .filter(name => name.toUpperCase() !== "JACIANA MELO");
+  }, [unidade]);
 
   // Scores
   const [notaClareza, setNotaClareza] = useState<number | null>(null);
@@ -52,22 +70,42 @@ export default function FormSurvey({
       if (prefilledData.participantes !== undefined) setParticipantes(String(prefilledData.participantes));
       if (prefilledData.date) setDate(prefilledData.date);
       if (prefilledData.unidade) setUnidade(prefilledData.unidade);
+      if (prefilledData.assistente) setAssistente(prefilledData.assistente.toUpperCase());
+      if (prefilledData.isSecondLeva !== undefined) setIsSecondLeva(prefilledData.isSecondLeva);
     }
   }, [prefilledData]);
 
   React.useEffect(() => {
     if (session) {
-      setAssistente(session.nome.toUpperCase());
+      if (!session.isVisitor && session.nome !== "Jaciana Melo") {
+        setAssistente(session.nome.toUpperCase());
+      } else if (prefilledData?.assistente) {
+        setAssistente(prefilledData.assistente.toUpperCase());
+      } else {
+        setAssistente("");
+      }
       if (!prefilledData?.unidade) {
         setUnidade(session.unidade === "TODAS" ? "LAPA" : session.unidade);
       }
     } else {
-      setAssistente("VINICIUS");
+      if (prefilledData?.assistente) {
+        setAssistente(prefilledData.assistente.toUpperCase());
+      } else {
+        setAssistente("");
+      }
       if (!prefilledData?.unidade) {
         setUnidade("PRN");
       }
     }
   }, [session, prefilledData]);
+
+  // Automação Cooperativa PRN: divisão de leva em tours com mais de 25 participantes
+  React.useEffect(() => {
+    const parsedParticipants = Number(participantes);
+    if (unidade === "PRN" && parsedParticipants > 25) {
+      setIsSecondLeva(true);
+    }
+  }, [participantes, unidade]);
 
   // Validate fields
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -138,7 +176,8 @@ export default function FormSurvey({
       justificativaAcolhimento: justificativaAcolhimento.trim(),
       notaAssistente: notaAssistente!,
       justificativaAssistente: justificativaAssistente.trim(),
-      melhorias: melhorias.trim()
+      melhorias: melhorias.trim(),
+      isSecondLeva: isSecondLeva
     };
 
     startTransition(() => {
@@ -164,6 +203,7 @@ export default function FormSurvey({
     setNotaAssistente(null);
     setJustificativaAssistente("");
     setMelhorias("");
+    setIsSecondLeva(false);
     setErrors({});
     setSuccess(false);
   };
@@ -397,28 +437,11 @@ export default function FormSurvey({
           <label className="block text-slate-900 text-sm font-semibold mb-1">
             3. Nome do seu Líder Educador <span className="text-red-500">*</span>
           </label>
-          <p className="text-slate-400 text-xs mb-3">Selecione um líder sugerido ou digite o nome completo dele.</p>
-          
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            {leaders.map((leader) => (
-              <button
-                type="button"
-                key={leader}
-                onClick={() => setLiderEducador(leader)}
-                className={`px-3 py-1 text-xs font-medium rounded border transition cursor-pointer ${
-                  liderEducador === leader
-                    ? "bg-slate-900 border-slate-900 text-white"
-                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {leader}
-              </button>
-            ))}
-          </div>
+          <p className="text-slate-400 text-xs mb-3">Digite o nome completo do seu líder educador.</p>
 
           <input
             type="text"
-            placeholder="Selecione acima ou digite o nome do líder educador..."
+            placeholder="Digite o nome do líder educador..."
             value={liderEducador}
             onChange={(e) => setLiderEducador(e.target.value)}
             className="w-full px-3 py-2 border border-slate-250 rounded-md focus:ring-1 focus:ring-amber-500 outline-none text-xs md:text-sm bg-white text-slate-800"
@@ -431,29 +454,11 @@ export default function FormSurvey({
           <label className="block text-slate-900 text-sm font-semibold mb-1">
             4. Qual é o seu produto (operação)? <span className="text-red-500">*</span>
           </label>
-          <p className="text-slate-400 text-xs mb-3">Selecione uma operação abaixo ou digite outra personalizada.</p>
-
-          <div className="flex flex-col gap-1.5 mb-3">
-            {products.map((prod) => (
-              <button
-                type="button"
-                key={prod}
-                onClick={() => setProduto(prod)}
-                className={`py-2 px-3 text-left text-xs rounded-md border transition flex items-center justify-between cursor-pointer ${
-                  produto === prod
-                    ? "bg-slate-900 border-slate-900 text-white font-semibold"
-                    : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <span>{prod}</span>
-                {produto === prod && <span className="bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded text-[9px] uppercase">Ativo</span>}
-              </button>
-            ))}
-          </div>
+          <p className="text-slate-400 text-xs mb-3">Digite o nome do produto ou operação correspondente.</p>
 
           <input
             type="text"
-            placeholder="Ou digite outro produto/operação caso não esteja listado..."
+            placeholder="Digite o nome do produto/operação..."
             value={produto}
             onChange={(e) => setProduto(e.target.value)}
             className="w-full px-3 py-2 border border-slate-250 rounded-md focus:ring-1 focus:ring-amber-500 outline-none text-xs md:text-sm bg-white text-slate-800"
@@ -481,16 +486,64 @@ export default function FormSurvey({
             />
           </div>
           {errors.participantes && <p className="text-red-500 text-xs mt-2 font-medium">{errors.participantes}</p>}
+
+          {/* Banner de automação PRN caso exceda 25 */}
+          {unidade === "PRN" && Number(participantes) > 25 && (
+            <div className="mt-3.5 p-3.5 bg-amber-500/10 dark:bg-amber-955/40 border border-amber-500/30 rounded-xl text-left animate-in fade-in slide-in-from-top-2 duration-300">
+              <p className="text-[11px] font-black uppercase text-amber-700 dark:text-amber-400 tracking-wider flex items-center gap-1.5 mb-1">
+                ⚠️ Automação Operacional PRN Ativa
+              </p>
+              <p className="text-xs text-slate-650 dark:text-slate-300 leading-normal">
+                Grupos com mais de 25 participantes na unidade <strong>PRN</strong> são automaticamente divididos em duas levas de tour para assegurar a máxima qualidade. O sistema já ativou o sinalizador de <strong>Leva Dupla integrada</strong> abaixo, garantindo que as avaliações sejam salvas, mas computadas sob um <strong>único tour realizado</strong> para o condutor.
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* 6. Qual assistente que conduziu o TP TOUR? */}
+        {/* 5.5 Controle de Divisão - Leva de Tour */}
+        <div className={`p-5 border rounded-xl transition-all shadow-xs flex flex-col gap-2.5 ${
+          unidade === "PRN" && Number(participantes) > 25 
+            ? "border-amber-500/30 bg-amber-500/5 dark:bg-amber-955/10" 
+            : "border-slate-250/70 bg-indigo-50/10 hover:border-indigo-200"
+        }`}>
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="isSecondLeva"
+              checked={isSecondLeva}
+              disabled={unidade === "PRN" && Number(participantes) > 25}
+              onChange={(e) => setIsSecondLeva(e.target.checked)}
+              className={`w-4 h-4 mt-1 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer ${
+                unidade === "PRN" && Number(participantes) > 25 ? "text-amber-600 bg-amber-150 border-amber-300" : "text-indigo-650"
+              }`}
+            />
+            <div className="select-none">
+              <label htmlFor="isSecondLeva" className="block text-slate-900 text-xs md:text-sm font-semibold cursor-pointer flex items-center gap-2">
+                Este formulário pertence à 2ª leva/etapa de um Tour Dividido?
+                {unidade === "PRN" && Number(participantes) > 25 && (
+                  <span className="bg-amber-100 dark:bg-amber-950/65 text-amber-800 dark:text-amber-400 border border-amber-300 text-[9px] px-2 py-0.5 rounded-full uppercase font-black tracking-widest font-mono shrink-0">
+                    Habilitado Automaticamente
+                  </span>
+                )}
+              </label>
+              <p className="text-slate-400 text-[11px] md:text-xs mt-1 leading-normal">
+                Ative esta opção se o público foi dividido em dois subgrupos (ex: 18 pessoas na primeira leva e 18 pessoas na segunda leva) para o mesmo guia.
+              </p>
+              <p className="text-indigo-600 dark:text-indigo-400 font-medium text-[11px] md:text-xs mt-1.5 flex items-center gap-1 bg-indigo-50/50 p-2 rounded-lg border border-indigo-100/30">
+                ⚡ <strong>Efeito no Dashboard:</strong> O sistema armazenará as avaliações dos visitantes, mas as contabilizará como um único tour realizado para o guia.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 6. Qual condutor oficial que conduziu o TP TOUR? */}
         <div id="field-assistente" className={`p-5 border rounded-xl transition-all shadow-xs ${errors.assistente ? 'border-red-300 bg-red-50/5' : 'border-slate-250/70 bg-slate-50/20 hover:border-slate-350'}`}>
           <label className="block text-slate-900 text-sm font-semibold mb-1">
-            6. Qual assistente que conduziu o TP TOUR? <span className="text-red-500">*</span>
+            6. Qual condutor oficial que conduziu o TP TOUR? <span className="text-red-500">*</span>
           </label>
-          <p className="text-slate-400 text-xs mb-3">O assistente condutor oficial responsável pelo seu tour.</p>
+          <p className="text-slate-400 text-xs mb-3">O condutor oficial responsável pelo seu tour.</p>
           <div className="space-y-1.5 mt-2.5">
-            {session && session.unidade !== "TODAS" && !session.isVisitor ? (
+            {session && session.unidade !== "TODAS" && !session.isVisitor && session.nome !== "Jaciana Melo" ? (
               /* Se for um colaborador regular logado, deixa UNICAMENTE o nome dele */
               <label className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-300 rounded-xl cursor-default transition">
                 <input
@@ -512,9 +565,9 @@ export default function FormSurvey({
                 </div>
               </label>
             ) : (
-              /* Se for Gestor Geral (TODAS) ou não logado, exibe todas as opções */
+              /* Se for Gestor Geral (TODAS) ou não logado, exibe as opções dinâmicas da unidade */
               <>
-                {session && (
+                {session && !session.isVisitor && (
                   <label className="flex items-center gap-3 p-2.5 bg-emerald-50/50 border border-emerald-250 rounded-md hover:bg-emerald-50 cursor-pointer transition">
                     <input
                       type="radio"
@@ -526,41 +579,104 @@ export default function FormSurvey({
                     />
                     <span className="text-slate-900 font-bold text-xs flex items-center gap-1.5 font-mono">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      {session.nome.toUpperCase()} (Assistente Logado)
+                      {session.nome.toUpperCase()} (Condutor Logado)
                     </span>
                   </label>
                 )}
 
-                <label className="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-md hover:bg-slate-50 cursor-pointer transition">
-                  <input
-                    type="radio"
-                    name="assistente"
-                    value="VINICIUS"
-                    checked={assistente === "VINICIUS"}
-                    onChange={(e) => setAssistente(e.target.value)}
-                    className="w-4 h-4 text-amber-500 border-slate-300 focus:ring-amber-500"
-                  />
-                  <span className="text-slate-800 font-semibold font-mono text-xs">VINICIUS (Coordenador Operacional)</span>
-                </label>
+                {/* Colaboradores Oficiais da Unidade Selecionada */}
+                {unitCollaborators.length > 0 && (
+                  <div className="space-y-2 pb-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                      Condutores Oficiais para a Unidade {unidade}:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {unitCollaborators.map((colabName) => {
+                        const isSelected = assistente.toUpperCase() === colabName.toUpperCase();
+                        return (
+                          <label
+                            key={colabName}
+                            className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all duration-150 ${
+                              isSelected
+                                ? "bg-emerald-500/5 border-emerald-500 text-slate-900 dark:text-white font-bold"
+                                : "bg-white border-slate-150 text-slate-750 hover:bg-slate-50/50 hover:border-slate-300"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="assistente"
+                              value={colabName.toUpperCase()}
+                              checked={isSelected}
+                              onChange={(e) => setAssistente(e.target.value)}
+                              className="w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500"
+                            />
+                            <div className="flex flex-col text-left min-w-0 animate-in fade-in duration-200">
+                              <span className="text-xs font-mono font-bold truncate">{colabName.toUpperCase()}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
-                <div className="flex gap-2 items-center p-2.5 bg-white border border-slate-200 rounded-md">
-                  <input
-                    type="radio"
-                    name="assistente"
-                    value="OUTRO"
-                    checked={assistente !== "VINICIUS" && (!session || assistente.toUpperCase() !== session.nome.toUpperCase())}
-                    onChange={() => setAssistente("")}
-                    className="w-4 h-4 text-amber-500 border-slate-300 focus:ring-amber-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Digitar outro assistente..."
-                    value={(assistente === "VINICIUS" || (session && assistente.toUpperCase() === session.nome.toUpperCase())) ? "" : assistente}
-                    disabled={assistente === "VINICIUS" || (session && assistente.toUpperCase() === session.nome.toUpperCase())}
-                    onChange={(e) => setAssistente(e.target.value)}
-                    className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md focus:ring-1 focus:ring-amber-500 outline-none bg-white font-medium"
-                  />
-                </div>
+                {session && !session.isVisitor && (
+                  <div className="pt-1.5 space-y-2">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                      Outras Opções:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all duration-150 ${
+                        assistente === "VINICIUS"
+                          ? "bg-amber-500/5 border-amber-500 text-slate-900 font-bold"
+                          : "bg-white border-slate-150 hover:bg-slate-50/50 hover:border-slate-300"
+                      }`}>
+                        <input
+                          type="radio"
+                          name="assistente"
+                          value="VINICIUS"
+                          checked={assistente === "VINICIUS"}
+                          onChange={(e) => setAssistente(e.target.value)}
+                          className="w-4 h-4 text-amber-500 border-slate-300 focus:ring-amber-500"
+                        />
+                        <div className="flex flex-col text-left min-w-0">
+                          <span className="text-xs font-mono font-bold">VINICIUS</span>
+                          <span className="text-[9px] text-amber-600 uppercase font-bold tracking-wider">Coordenador Operacional</span>
+                        </div>
+                      </label>
+
+                      {(() => {
+                        const isUnitColab = unitCollaborators.some(c => c.toUpperCase() === assistente.toUpperCase());
+                        const isSessionColab = session && !session.isVisitor && session.nome.toUpperCase() === assistente.toUpperCase();
+                        const isVinicius = assistente === "VINICIUS";
+                        const isOther = !isVinicius && !isUnitColab && !isSessionColab;
+
+                        return (
+                          <div className={`flex gap-2.5 items-center p-2 rounded-xl border ${
+                            isOther ? "border-amber-400 bg-amber-500/5" : "border-slate-150 bg-white"
+                          }`}>
+                            <input
+                              type="radio"
+                              name="assistente"
+                              value="OUTRO"
+                              checked={isOther}
+                              onChange={() => setAssistente("")}
+                              className="w-4 h-4 text-amber-500 border-slate-300 focus:ring-amber-500"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Digitar outro assistente..."
+                              value={isOther ? assistente : ""}
+                              disabled={!isOther}
+                              onChange={(e) => setAssistente(e.target.value)}
+                              className="w-full px-2.5 py-1 text-xs border border-slate-150 hover:border-slate-200 rounded-lg focus:ring-1 focus:ring-amber-500 outline-none bg-white font-mono uppercase tracking-tight"
+                            />
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -727,12 +843,12 @@ export default function FormSurvey({
           </div>
         </div>
 
-        {/* 12. de 1 a 10 qual nota você daria para o assistente? */}
+        {/* 12. de 1 a 10 qual nota você daria para o condutor? */}
         <div id="field-notaAssistente" className={`p-5 border rounded-xl transition-all shadow-xs ${errors.notaAssistente || errors.justificativaAssistente ? 'border-red-300 bg-red-50/5' : 'border-slate-250/70 bg-slate-50/20 hover:border-slate-350'}`}>
           <label className="block text-slate-900 text-sm font-semibold mb-1">
-            12. de 1 a 10 qual nota você daria para o assistente? <span className="text-red-500">*</span>
+            12. de 1 a 10 qual nota você daria para o condutor oficial? <span className="text-red-500">*</span>
           </label>
-          <p className="text-slate-400 text-xs mb-4">Classifique o suporte direto oferecido pelo assistente de 1 a 10.</p>
+          <p className="text-slate-400 text-xs mb-4">Classifique o suporte direto oferecido pelo condutor oficial de 1 a 10.</p>
           
           <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 mb-4">
             {Array.from({ length: 10 }, (_, i) => i + 1).map((val) => (
@@ -759,7 +875,7 @@ export default function FormSurvey({
             </label>
             <textarea
               rows={3}
-              placeholder="O que motivou a nota dada ao assistente condutor?..."
+              placeholder="O que motivou a nota dada ao condutor oficial?..."
               value={justificativaAssistente}
               onChange={(e) => setJustificativaAssistente(e.target.value)}
               className="w-full px-3 py-2 border border-slate-250 rounded-md focus:ring-1 focus:ring-amber-500 outline-none text-slate-800 text-xs md:text-sm resize-y bg-white placeholder-slate-400"

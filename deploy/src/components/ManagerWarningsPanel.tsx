@@ -134,6 +134,13 @@ export default function ManagerWarningsPanel({
 
   // 1. Generate Automatic Warnings / Conflict Detections based on current schedules
   const systemWarnings = useMemo(() => {
+    const getUnitCapacityLimit = (unit: string, date?: string) => {
+      if (unit === "LAPA" && date && date >= "2026-05-25" && date <= "2026-05-27") {
+        return 20;
+      }
+      return 30;
+    };
+
     const alerts: { id: string; type: "clash" | "capacity" | "date"; message: string; tourDetails: TourSchedule }[] = [];
 
     // Map to find duplicate guide allocations (clash)
@@ -154,18 +161,19 @@ export default function ManagerWarningsPanel({
           alerts.push({
             id: `clash-${current.id}-${clashed.id}`,
             type: "clash",
-            message: `CONFLITO DE GUIA: O Líder/Guia "${current.guide}" foi escalado para dois tours simultâneos no dia ${current.date} às ${current.time} [Tours: "${current.title}" (${current.unit}) e "${clashed.title}" (${clashed.unit})].`,
+            message: `CONFLITO DE CONDUTOR: O Condutor "${current.guide}" foi escalado para dois tours simultâneos no dia ${current.date} às ${current.time} [Tours: "${current.title}" (${current.unit}) e "${clashed.title}" (${clashed.unit})].`,
             tourDetails: current
           });
         }
       }
 
-      // Capacity warnings: check if visitors count is greater than 30 (safety limit warning)
-      if (current.participants > 30) {
+      // Capacity warnings: check if visitors count is greater than suggested limit
+      const maxCap = getUnitCapacityLimit(current.unit, current.date);
+      if (current.participants > maxCap) {
         alerts.push({
           id: `cap-${current.id}`,
           type: "capacity",
-          message: `CAPACIDADE EXCEDIDA: O tour "${current.title}" (${current.unit}) liderado por "${current.guide}" no dia ${current.date} conta com ${current.participants} participantes, o que excede a recomendação máxima de 30 visitantes por guia.`,
+          message: `CAPACIDADE EXCEDIDA: O tour "${current.title}" (${current.unit}) liderado por "${current.guide}" no dia ${current.date} conta com ${current.participants} participantes, o que excede a recomendação máxima de ${maxCap} visitantes por condutor para esta unidade.`,
           tourDetails: current
         });
       }
@@ -491,7 +499,7 @@ export default function ManagerWarningsPanel({
                       <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
                       <div className="space-y-1 grow">
                         <span className="p-0.5 px-2 bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-455 font-mono text-[8px] font-black uppercase tracking-wider rounded-sm">
-                          {warn.type === "clash" ? "CONFLITO DE GUIA" : "LIMITE EXCEDIDO"}
+                          {warn.type === "clash" ? "CONFLITO DE CONDUTOR" : "LIMITE EXCEDIDO"}
                         </span>
                         <p className="text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 font-medium">
                           {warn.message}

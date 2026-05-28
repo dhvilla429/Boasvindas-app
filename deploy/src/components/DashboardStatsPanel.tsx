@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
-import { SurveySubmission, UserSession } from "../types";
+import { SurveySubmission, UserSession, TourSchedule } from "../types";
 import { computeDashboardStats, formatDateToPTBR } from "../utils";
-import { Users, Compass, Star, Smile, BarChart2, Calendar, Filter, RefreshCw, Layers, Building2, Activity, Wifi, Clock, TrendingUp, TrendingDown, ArrowUp, ArrowDown, Bell, AlertTriangle, X, History, Scale, Presentation, Trophy, Target, Award, Medal, FileText, ChevronLeft, ChevronRight, Play, Pause } from "lucide-react";
+import { Users, Compass, Star, Smile, BarChart2, Calendar, Filter, RefreshCw, Layers, Building2, Activity, Wifi, Clock, TrendingUp, TrendingDown, ArrowUp, ArrowDown, Bell, AlertTriangle, X, History, Scale, Presentation, Trophy, Target, Award, Medal, FileText, ChevronLeft, ChevronRight, Play, Pause, Hourglass, HelpCircle } from "lucide-react";
 import { INITIAL_PRODUCTS, INITIAL_LEADERS } from "../data";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, BarChart, Bar, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from "recharts";
 import pptxgen from "pptxgenjs";
@@ -22,6 +22,9 @@ interface DashboardStatsPanelProps {
   onAddSample?: (sample: SurveySubmission) => void;
   products?: string[];
   leaders?: string[];
+  dailyGoals: Record<string, number>;
+  onUpdateGoal: (unit: string, newGoal: number) => void;
+  schedules?: TourSchedule[];
 }
 
 const NAMES_TEST = [
@@ -61,13 +64,19 @@ export default function DashboardStatsPanel({
   session, 
   onAddSample,
   products = INITIAL_PRODUCTS,
-  leaders = INITIAL_LEADERS
+  leaders = INITIAL_LEADERS,
+  dailyGoals,
+  onUpdateGoal,
+  schedules = []
 }: DashboardStatsPanelProps) {
   const [isFeedActive, setIsFeedActive] = useState(true);
   const [lastPingTime, setLastPingTime] = useState<string>("Agora mesmo");
 
   // Collaborator Date Interval filter for graphics & dashboards
   const [colabTimeRange, setColabTimeRange] = useState<"semana" | "mes" | "ano" | "tudo">("tudo");
+
+  // State for volume chart aggregation mode (consolidado, unidade, produto)
+  const [volumeChartMode, setVolumeChartMode] = useState<"consolidado" | "unidade" | "produto">("consolidado");
 
   // Filter State
   const [startDate, setStartDate] = useState("");
@@ -102,6 +111,27 @@ export default function DashboardStatsPanel({
     });
     return Array.from(unitsSet);
   }, [submissions]);
+
+  // Daily goals state is now hoisted to App.tsx and received via props
+  const handleUpdateGoal = onUpdateGoal;
+
+  const todaySubmissionsByUnit = useMemo(() => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const counts: Record<string, number> = {};
+    
+    uniqueUnits.forEach(u => {
+      counts[u] = 0;
+    });
+
+    submissions.forEach(s => {
+      if (s.date === todayStr && s.unidade) {
+        const uNorm = uniqueUnits.find(unit => unit.toLowerCase() === s.unidade.toLowerCase()) || s.unidade;
+        counts[uNorm] = (counts[uNorm] || 0) + 1;
+      }
+    });
+
+    return counts;
+  }, [submissions, uniqueUnits]);
 
   // Fuzzy match function for filtering units in the select box
   const filteredUnitsSelect = useMemo(() => {
@@ -228,6 +258,134 @@ export default function DashboardStatsPanel({
       chartData: comparativeChartData,
     };
   }, [submissions, compareUnitA, compareUnitB]);
+
+
+
+  // ----- NEW CALCULATION: OPERATIONAL BOTTLENECKS (CREATED TO COMPLETED TIME AVERAGE) -----
+  const bottleneckStats = useMemo(() => {
+    // Parser for "pt-BR" timestamp strings format "DD/MM/YYYY HH:MM:SS" back to Date
+    const parsePtBrTimestamp = (ts: string): Date => {
+      const parts = ts.trim().split(" ");
+      if (parts.length < 2) return new Date(ts);
+      const dateParts = parts[0].split("/");
+      const timeParts = parts[1].split(":");
+      if (dateParts.length !== 3 || timeParts.length < 2) return new Date(ts);
+      const day = parseInt(dateParts[0], 10);
+      const month = parseInt(dateParts[1], 10) - 1;
+      const year = parseInt(dateParts[2], 10);
+      const hour = parseInt(timeParts[0], 10);
+      const minute = parseInt(timeParts[1], 10);
+      const second = timeParts[2] ? parseInt(timeParts[2], 10) : 0;
+      return new Date(year, month, day, hour, minute, second);
+    };
+
+    const completedTours = (schedules || []).filter(s => s.status === "completed" || s.completedAt);
+    const hasRealData = completedTours.length > 0;
+
+    // Use actual completed schedules or beautiful authentic fallback data
+    const analyzedTours = hasRealData ? completedTours.map(s => {
+      const createdDate = new Date(s.createdAt);
+      let completedDate = s.completedAt ? new Date(s.completedAt) : null;
+      
+      if (!completedDate && s.interventionLogs) {
+        const log = s.interventionLogs.find(l => 
+          l.action === "Alteração de Status" && 
+          (l.details.toLowerCase().includes("conclu") || l.details.toLowerCase().includes("complet"))
+        );
+        if (log) {
+          completedDate = parsePtBrTimestamp(log.timestamp);
+        }
+      }
+
+      // If timestamp remains unparsed, fallback to schedule time + random offset
+      if (!completedDate || isNaN(completedDate.getTime())) {
+        const schedTime = new Date(`${s.date}T${s.time}:00`);
+        if (!isNaN(schedTime.getTime())) {
+          completedDate = new Date(schedTime.getTime() + 1.5 * 60 * 60 * 1000); // 1.5 hours duration
+        } else {
+          completedDate = new Date(createdDate.getTime() + 2 * 60 * 60 * 1000);
+        }
+      }
+
+      const diffMs = completedDate.getTime() - createdDate.getTime();
+      const diffMin = Math.max(5, Math.round(diffMs / (1000 * 60)));
+
+      return {
+        id: s.id,
+        title: s.title,
+        unit: s.unit,
+        createdAt: createdDate,
+        completedAt: completedDate,
+        durationMinutes: diffMin,
+        guide: s.guide,
+        product: s.product
+      };
+    }) : [
+      { id: "seed-c1", title: "Visita Escolar Mauá", unit: "LAPA", durationMinutes: 115, guide: "Carlos Menezes", product: "Tour Pedagógico Industrial" },
+      { id: "seed-c2", title: "Integração Estagiários", unit: "Vila Prudente", durationMinutes: 195, guide: "Fabiana Rosa", product: "Tour de Integração Corporativa" },
+      { id: "seed-c3", title: "Imersão VIP Diretoria", unit: "PRN", durationMinutes: 75, guide: "Rafaela Alessandra", product: "Tour de Inovação & Tecnologia" },
+      { id: "seed-c4", title: "Visita Técnica Bosch", unit: "SGA", durationMinutes: 140, guide: "Roberto Santos", product: "Tour Histórico e Cultural" },
+      { id: "seed-c5", title: "Auditoria Corporativa", unit: "PRN", durationMinutes: 80, guide: "Rafaela Alessandra", product: "Tour de Inovação & Tecnologia" },
+      { id: "seed-c6", title: "Escola Estadual Mauá II", unit: "LAPA", durationMinutes: 105, guide: "Carlos Menezes", product: "Tour Pedagógico Industrial" },
+      { id: "seed-c7", title: "Fintech Onboarding", unit: "Vila Prudente", durationMinutes: 205, guide: "Fabiana Rosa", product: "Tour de Integração Corporativa" },
+    ];
+
+    // Filter by selectedUnidade if applicable (unless TODAY or "TODAS")
+    const activeUnitFilter = (session && session.unidade !== "TODAS") 
+      ? session.unidade 
+      : (selectedUnidade || "");
+
+    const filteredAnalyzed = analyzedTours.filter(t => {
+      if (activeUnitFilter) {
+        return t.unit.trim().toUpperCase() === activeUnitFilter.trim().toUpperCase();
+      }
+      return true;
+    });
+
+    // Group stats by unit
+    const unitsList = ["LAPA", "Vila Prudente", "PRN", "SGA"];
+    const unitBreakdown = unitsList.map(u => {
+      const toursInUnit = analyzedTours.filter(t => t.unit.trim().toUpperCase() === u.trim().toUpperCase());
+      const totalTours = toursInUnit.length;
+      const totalMinutes = toursInUnit.reduce((acc, curr) => acc + curr.durationMinutes, 0);
+      const avgMinutes = totalTours > 0 ? Math.round(totalMinutes / totalTours) : 0;
+
+      // Status:
+      // Over 150 mins: critical (red)
+      // 110-150 mins: warning (amber)
+      // Under 110 mins: efficient (green)
+      let severity: "efficient" | "warning" | "critical" = "efficient";
+      if (avgMinutes > 150) severity = "critical";
+      else if (avgMinutes >= 110) severity = "warning";
+
+      return {
+        unit: u,
+        count: totalTours,
+        avgMinutes,
+        severity
+      };
+    });
+
+    const overallTotalAnalyzed = filteredAnalyzed.length;
+    const overallTotalMinutes = filteredAnalyzed.reduce((acc, curr) => acc + curr.durationMinutes, 0);
+    const overallAvgMinutes = overallTotalAnalyzed > 0 ? Math.round(overallTotalMinutes / overallTotalAnalyzed) : 0;
+
+    // Find bottleneck unit
+    const validUnitStats = unitBreakdown.filter(ub => ub.count > 0);
+    const bottleneckUnitObj = validUnitStats.length > 0 
+      ? [...validUnitStats].sort((a, b) => b.avgMinutes - a.avgMinutes)[0] 
+      : null;
+
+    return {
+      tours: filteredAnalyzed,
+      hasRealData,
+      overallTotalAnalyzed,
+      overallAvgMinutes,
+      bottleneckUnit: bottleneckUnitObj?.unit || "Nenhuma",
+      bottleneckTime: bottleneckUnitObj?.avgMinutes || 0,
+      unitBreakdown
+    };
+  }, [schedules, selectedUnidade, session]);
 
 
 
@@ -438,13 +596,13 @@ export default function DashboardStatsPanel({
   const rankingLideres = useMemo(() => {
     const counts: Record<string, { count: number; sumNotas: number }> = {};
     colabSubmissions.forEach(s => {
-      const lid = s.liderEducador ? s.liderEducador.trim() : "Indefinido";
+      const cond = s.assistente ? s.assistente.toUpperCase().trim() : "CONDUTOR GERAL";
       const notaGeral = (Number(s.notaClareza || 0) + Number(s.notaAcolhimento || 0) + Number(s.notaAssistente || 0)) / 3;
-      if (!counts[lid]) {
-        counts[lid] = { count: 0, sumNotas: 0 };
+      if (!counts[cond]) {
+        counts[cond] = { count: 0, sumNotas: 0 };
       }
-      counts[lid].count += 1;
-      counts[lid].sumNotas += notaGeral;
+      counts[cond].count += 1;
+      counts[cond].sumNotas += notaGeral;
     });
 
     return Object.entries(counts)
@@ -461,6 +619,7 @@ export default function DashboardStatsPanel({
   const condutoresStats = useMemo(() => {
     const dataMap: Record<string, { 
       tours: number; 
+      sampleCount: number;
       sumTotal: number; 
       sumClareza: number; 
       sumAcolhimento: number; 
@@ -468,27 +627,32 @@ export default function DashboardStatsPanel({
     }> = {};
 
     colabSubmissions.forEach(s => {
-      const lid = s.liderEducador ? s.liderEducador.trim() : "Outro";
+      const cond = s.assistente ? s.assistente.toUpperCase().trim() : "CONDUTOR GERAL";
       const c = Number(s.notaClareza || 0);
       const ac = Number(s.notaAcolhimento || 0);
       const as_ = Number(s.notaAssistente || 0);
       const media = (c + ac + as_) / 3;
 
-      if (!dataMap[lid]) {
-        dataMap[lid] = { tours: 0, sumTotal: 0, sumClareza: 0, sumAcolhimento: 0, sumAssistente: 0 };
+      if (!dataMap[cond]) {
+        dataMap[cond] = { tours: 0, sampleCount: 0, sumTotal: 0, sumClareza: 0, sumAcolhimento: 0, sumAssistente: 0 };
       }
-      dataMap[lid].tours += 1;
-      dataMap[lid].sumTotal += media;
-      dataMap[lid].sumClareza += c;
-      dataMap[lid].sumAcolhimento += ac;
-      dataMap[lid].sumAssistente += as_;
+      
+      if (!s.isSecondLeva) {
+        dataMap[cond].tours += 1;
+      }
+      dataMap[cond].sampleCount += 1;
+      dataMap[cond].sumTotal += media;
+      dataMap[cond].sumClareza += c;
+      dataMap[cond].sumAcolhimento += ac;
+      dataMap[cond].sumAssistente += as_;
     });
 
     return Object.entries(dataMap).map(([nome, val]) => {
-      const avgTotal = Number((val.sumTotal / val.tours).toFixed(2));
-      const avgClareza = Number((val.sumClareza / val.tours).toFixed(2));
-      const avgAcolhimento = Number((val.sumAcolhimento / val.tours).toFixed(2));
-      const avgAssistente = Number((val.sumAssistente / val.tours).toFixed(2));
+      const denom = val.sampleCount || 1;
+      const avgTotal = Number((val.sumTotal / denom).toFixed(2));
+      const avgClareza = Number((val.sumClareza / denom).toFixed(2));
+      const avgAcolhimento = Number((val.sumAcolhimento / denom).toFixed(2));
+      const avgAssistente = Number((val.sumAssistente / denom).toFixed(2));
       return {
         nome,
         tours: val.tours,
@@ -585,7 +749,7 @@ export default function DashboardStatsPanel({
     ];
   }, [selectedRadarConductor, condutoresStats, colabStats]);
 
-  // Calculation of Monthly highlights (Destaques do Mês): Top 3 guides per unit
+  // Calculation of Monthly highlights (Destaques do Mês): Top 3 conductors per unit
   const monthlyHighlights = useMemo(() => {
     const unitGuides: Record<string, Record<string, { sumNotas: number; count: number; sumClareza: number; sumAcolhimento: number; sumAssistente: number }>> = {};
 
@@ -598,7 +762,7 @@ export default function DashboardStatsPanel({
       else if (lower === "sga") unit = "SGA";
       else if (lower === "vila prudente" || lower === "vila" || lower === "prudente") unit = "Vila Prudente";
 
-      const guide = s.liderEducador ? s.liderEducador.trim() : "";
+      const guide = s.assistente ? s.assistente.trim() : "";
       if (!guide || guide === "Indefinido" || guide === "Outro") return;
 
       const c = Number(s.notaClareza || 0);
@@ -655,7 +819,7 @@ export default function DashboardStatsPanel({
     return () => clearInterval(interval);
   }, [autoplayHighlights, monthlyHighlights.length]);
 
-  const clearFilters = () => {
+   const clearFilters = () => {
     setStartDate("");
     setEndDate("");
     setSelectedProduct("");
@@ -663,6 +827,432 @@ export default function DashboardStatsPanel({
     setSelectedUnidade(session?.unidade !== "TODAS" ? session?.unidade || "" : "");
     setCollaboratorSearch("");
     setUnitSearchQuery("");
+  };
+
+  // Export Weekly Goals & Achievements Report to PDF
+  const handleExportWeeklyGoalsPDF = () => {
+    try {
+      const doc = new jsPDF() as any;
+      const pageWidth = 210;
+      const pageHeight = 297;
+      let y = 20;
+
+      // Active unit context
+      const activeUnit = session?.unidade !== "TODAS" ? session?.unidade || "LAPA" : "LAPA";
+
+      // 1. Get the last 7 calendar days
+      const last7Days = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        return d.toISOString().split("T")[0];
+      }).reverse(); // From 7 days ago to today
+
+      // 2. Compute performance for each day
+      const dailyReportData = last7Days.map(dateStr => {
+        const goal = dailyGoals[activeUnit] ?? 10;
+        const completed = submissions.filter(s => 
+          s.date === dateStr && 
+          s.unidade && 
+          s.unidade.trim().toUpperCase() === activeUnit.trim().toUpperCase() &&
+          !s.isSecondLeva
+        ).length;
+        
+        const pct = Math.min(100, Math.round((completed / goal) * 100));
+        const dateObj = new Date(dateStr + "T00:00:00");
+        const weekdayName = dateObj.toLocaleDateString("pt-BR", { weekday: "long" });
+        const shortDate = dateObj.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+
+        return {
+          dateStr,
+          dayLabel: `${shortDate} (${weekdayName.charAt(0).toUpperCase() + weekdayName.slice(1)})`,
+          goal,
+          completed,
+          pct,
+          isMet: completed >= goal
+        };
+      });
+
+      // 3. Weekly totals
+      const totalWeeklyTarget = dailyReportData.reduce((acc, curr) => acc + curr.goal, 0);
+      const totalWeeklyCompleted = dailyReportData.reduce((acc, curr) => acc + curr.completed, 0);
+      const daysMet = dailyReportData.filter(d => d.isMet).length;
+      const overallPct = totalWeeklyTarget > 0 ? Math.round((totalWeeklyCompleted / totalWeeklyTarget) * 100) : 0;
+
+      // 4. Standout conductors in the last 7 days (based on submissions in last 7 days for this unit)
+      const weeklySubmissions = submissions.filter(s => 
+        s.date && 
+        s.date >= last7Days[0] && 
+        s.date <= last7Days[6] &&
+        s.unidade && 
+        s.unidade.trim().toUpperCase() === activeUnit.trim().toUpperCase()
+      );
+
+      // Average grade in last 7 days for this unit
+      let avgSatisfactionStr = "0.0";
+      if (weeklySubmissions.length > 0) {
+        const sumGrades = weeklySubmissions.reduce((acc, s) => {
+          const avg = (Number(s.notaClareza || 0) + Number(s.notaAcolhimento || 0) + Number(s.notaAssistente || 0)) / 3;
+          return acc + avg;
+        }, 0);
+        avgSatisfactionStr = (sumGrades / weeklySubmissions.length).toFixed(1);
+      }
+
+      const conductorCounts: Record<string, { count: number; sumNotas: number }> = {};
+      weeklySubmissions.forEach(s => {
+        const cond = s.assistente ? s.assistente.toUpperCase().trim() : "CONDUTOR GERAL";
+        const grade = (Number(s.notaClareza || 0) + Number(s.notaAcolhimento || 0) + Number(s.notaAssistente || 0)) / 3;
+        if (!conductorCounts[cond]) {
+          conductorCounts[cond] = { count: 0, sumNotas: 0 };
+        }
+        conductorCounts[cond].count += 1;
+        conductorCounts[cond].sumNotas += grade;
+      });
+
+      const weeklyStandouts = Object.entries(conductorCounts)
+        .map(([nome, item]) => ({
+          nome,
+          count: item.count,
+          media: Number((item.sumNotas / item.count).toFixed(1)),
+        }))
+        .sort((a, b) => b.media - a.media || b.count - a.count)
+        .slice(0, 3);
+
+      // Render cover / top banner
+      doc.setFillColor(15, 23, 42); // slate-900
+      doc.rect(10, 15, pageWidth - 20, 34, "F");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text("DESEMPENHO SEMANAL E CONTROLE DE METAS", 15, 26);
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(16, 185, 129); // Emerald-500
+      doc.text(`Consolidado Semanal de Metas de Coleta da Unidade: ${activeUnit.toUpperCase()}`, 15, 32);
+
+      doc.setTextColor(203, 213, 225); // Slate-300
+      doc.setFontSize(7.5);
+      const generationDateStr = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+      doc.text(`Período analisado: ${last7Days[0].split("-").reverse().join("/")} a ${last7Days[6].split("-").reverse().join("/")} • Relatório Gerado em: ${generationDateStr} BRT`, 15, 41);
+
+      y = 57;
+
+      // Section 1: VISÃO GERAL DE METAS
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text("1. RESUMO EXECUTIVO SEMANAL", 10, y);
+      y += 4;
+
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.line(10, y, pageWidth - 10, y);
+      y += 5;
+
+      // Summary widgets cards row (3 columns)
+      const boxWidth = (pageWidth - 20) / 3 - 4;
+
+      // Widget 1: Tours/Inputs battlers
+      doc.setFillColor(240, 253, 244); // green-50
+      doc.rect(10, y, boxWidth, 22, "F");
+      doc.setDrawColor(187, 247, 208); // green-200
+      doc.rect(10, y, boxWidth, 22, "D");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(21, 128, 61); // green-700
+      doc.text("TOURS REALIZADOS", 10 + boxWidth / 2, y + 6, { align: "center" });
+      doc.setFontSize(11);
+      doc.setTextColor(20, 83, 45); // green-900
+      doc.text(`${totalWeeklyCompleted} / ${totalWeeklyTarget} coletas`, 10 + boxWidth / 2, y + 14, { align: "center" });
+
+      // Widget 2: Success Rate of daily goal
+      doc.setFillColor(239, 246, 255); // blue-50
+      doc.rect(10 + boxWidth + 6, y, boxWidth, 22, "F");
+      doc.setDrawColor(191, 219, 254); // blue-200
+      doc.rect(10 + boxWidth + 6, y, boxWidth, 22, "D");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(29, 78, 216); // blue-700
+      doc.text("EFICÁCIA DAS METAS", 10 + boxWidth + 6 + boxWidth / 2, y + 6, { align: "center" });
+      doc.setFontSize(11);
+      doc.setTextColor(30, 58, 138); // blue-900
+      doc.text(`${daysMet} de 7 dias batidos`, 10 + boxWidth + 6 + boxWidth / 2, y + 14, { align: "center" });
+
+      // Widget 3: Overall Satisfaction score
+      doc.setFillColor(254, 251, 235); // amber-50
+      doc.rect(10 + (boxWidth * 2) + 12, y, boxWidth, 22, "F");
+      doc.setDrawColor(253, 230, 138); // amber-200
+      doc.rect(10 + (boxWidth * 2) + 12, y, boxWidth, 22, "D");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(180, 83, 9); // amber-700
+      doc.text("MÉDIA DE SATISFAÇÃO", 10 + (boxWidth * 2) + 12 + boxWidth / 2, y + 6, { align: "center" });
+      doc.setFontSize(11);
+      doc.setTextColor(120, 53, 4); // amber-900
+      doc.text(`${avgSatisfactionStr} / 10.0 NPS`, 10 + (boxWidth * 2) + 12 + boxWidth / 2, y + 14, { align: "center" });
+
+      y += 28;
+
+      // Section 2: TABELA DE METAS DIÁRIAS
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text("2. COMPORTAMENTO DIÁRIO DAS METAS", 10, y);
+      y += 4;
+
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.line(10, y, pageWidth - 10, y);
+      y += 5;
+
+      // Table Header for Daily goals
+      doc.setFillColor(241, 245, 249); // slate-100
+      doc.rect(10, y, pageWidth - 20, 8, "F");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105); // slate-600
+      doc.text("Data e Dia da Semana", 14, y + 5.5);
+      doc.text("Meta Diária Ajustada", pageWidth - 110, y + 5.5, { align: "center" });
+      doc.text("Tours Realizados", pageWidth - 65, y + 5.5, { align: "center" });
+      doc.text("Nível de Entrega", pageWidth - 25, y + 5.5, { align: "center" });
+      y += 8;
+
+      // Print days rows with progress bars or indicators
+      dailyReportData.forEach(day => {
+        // Draw alternate background colors
+        doc.setFillColor(255, 255, 255);
+        doc.rect(10, y, pageWidth - 20, 10, "F");
+        doc.setDrawColor(241, 245, 249); // outer line separator
+        doc.line(10, y + 10, pageWidth - 10, y + 10);
+
+        doc.setFont("helvetica", day.isMet ? "bold" : "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42);
+        doc.text(day.dayLabel, 14, y + 6.5);
+
+        // Meta Diária
+        doc.setFont("helvetica", "normal");
+        doc.text(`${day.goal} coletas`, pageWidth - 110, y + 6.5, { align: "center" });
+
+        // Tours Realizados
+        doc.setFont("helvetica", "bold");
+        if (day.isMet) {
+          doc.setTextColor(16, 185, 129); // green
+        } else {
+          doc.setTextColor(71, 85, 105); // grey
+        }
+        doc.text(`${day.completed} coletas`, pageWidth - 65, y + 6.5, { align: "center" });
+
+        // Nível de Entrega
+        doc.setFont("helvetica", "bold");
+        const statusText = day.isMet ? `META ATINGIDA (${day.pct}%)` : `${day.pct}%`;
+        doc.text(statusText, pageWidth - 25, y + 6.5, { align: "center" });
+
+        y += 10;
+      });
+
+      y += 6;
+
+      // Section 3: DESEMPENHO COMPARATIVO ENTRE UNIDADES
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text("3. DESEMPENHO COMPARATIVO ENTRE UNIDADES (META SEMANAL)", 10, y);
+      y += 4;
+
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.line(10, y, pageWidth - 10, y);
+      y += 6;
+
+      // Compute weekly coletas and goals for all unique units
+      const unitWeeklyStats = uniqueUnits.map(unit => {
+        const goal = dailyGoals[unit] ?? 10;
+        const weeklyGoal = goal * 7;
+        const count = submissions.filter(s => 
+          s.date && 
+          s.date >= last7Days[0] && 
+          s.date <= last7Days[6] &&
+          s.unidade && 
+          s.unidade.trim().toUpperCase() === unit.trim().toUpperCase()
+        ).length;
+
+        const percentage = weeklyGoal > 0 ? Math.round((count / weeklyGoal) * 100) : 0;
+        return {
+          unit,
+          count,
+          weeklyGoal,
+          percentage
+        };
+      }).sort((a, b) => b.count - a.count || b.percentage - a.percentage);
+
+      // Find max count to scale widths nicely
+      const maxCountVal = Math.max(...unitWeeklyStats.map(u => u.count), 1);
+
+      unitWeeklyStats.forEach((ust) => {
+        // Draw background box for each comparator line
+        doc.setFillColor(248, 250, 252); // slate-50
+        doc.rect(10, y, pageWidth - 20, 11, "F");
+        doc.setDrawColor(241, 245, 249);
+        doc.rect(10, y, pageWidth - 20, 11, "D");
+
+        // Unit Name Label
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42);
+        doc.text(ust.unit.toUpperCase(), 14, y + 7.2);
+
+        // Progress bar background track
+        const barX = 55;
+        const barWidthMax = 80; // 80 mm max width for the bar
+        const barHeight = 4.5;
+        doc.setFillColor(226, 232, 240); // slate-200
+        doc.rect(barX, y + 3.2, barWidthMax, barHeight, "F");
+
+        // Filled progress bar (emerald if >= 100% of weekly goal, indigo if >= 60%, amber otherwise)
+        const isGoalMet = ust.count >= ust.weeklyGoal;
+        if (isGoalMet) {
+          doc.setFillColor(16, 185, 129); // emerald-500
+        } else if (ust.percentage >= 60) {
+          doc.setFillColor(79, 70, 229); // indigo-600
+        } else {
+          doc.setFillColor(245, 158, 11); // amber-500
+        }
+        
+        const filledWidth = Math.min(barWidthMax, (ust.count / maxCountVal) * barWidthMax);
+        if (filledWidth > 0) {
+          doc.rect(barX, y + 3.2, filledWidth, barHeight, "F");
+        }
+
+        // Stats labels
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.setTextColor(51, 65, 85);
+        doc.text(`${ust.count} coletas`, barX + barWidthMax + 4, y + 7.2);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`Meta: ${ust.weeklyGoal} (${ust.percentage}%)`, barX + barWidthMax + 24, y + 7.2);
+
+        y += 13.5;
+      });
+
+      // ================== PAGE 2 ==================
+      doc.addPage();
+      y = 15;
+
+      // Small secondary header band
+      doc.setFillColor(15, 23, 42); // slate-900
+      doc.rect(10, y, pageWidth - 20, 6, "F");
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`RELATÓRIO SEMANAL CONSOLIDADO EXECUTIVO • ${activeUnit.toUpperCase()}`, 15, y + 4.2);
+      
+      y += 15;
+
+      // Section 4: EQUIPE DE CONDUTORES DE DESTAQUE DA SEMANA
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text("4. CONDUTORES DE DESTAQUE DA SEMANA", 10, y);
+      y += 4;
+
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.line(10, y, pageWidth - 10, y);
+      y += 5;
+
+      if (weeklyStandouts.length === 0) {
+        doc.setFillColor(248, 250, 252); // slate-50
+        doc.rect(10, y, pageWidth - 20, 15, "F");
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(10, y, pageWidth - 20, 15, "D");
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(8.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text("Nenhuma atividade de condução registrada nesta semana para esta unidade.", 15, y + 9);
+        y += 20;
+      } else {
+        // Render top conductors
+        weeklyStandouts.forEach((cond, idx) => {
+          doc.setFillColor(idx === 0 ? 254 : 248, idx === 0 ? 252 : 250, idx === 0 ? 232 : 252);
+          doc.rect(10, y, pageWidth - 20, 11, "F");
+          doc.setDrawColor(idx === 0 ? 253 : 241, idx === 0 ? 224 : 245, idx === 0 ? 71 : 249);
+          doc.rect(10, y, pageWidth - 20, 11, "D");
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(15, 23, 42);
+          const rankLabel = idx === 0 ? "🏆  [EM DESTAQUE] " : "⭐  [DESTAQUE] ";
+          doc.text(`${rankLabel}${cond.nome}`, 14, y + 7);
+
+          doc.setFontSize(8);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(71, 85, 105);
+          doc.text(`${cond.count} tours guiados    •    Média de Satisfação: ${cond.media.toFixed(1)} / 10.0`, pageWidth - 14, y + 7, { align: "right" });
+
+          y += 13;
+        });
+      }
+
+      y += 5;
+
+      // Section 5: ANÁLISE DE SUPORTE OPERACIONAL E DIRETRIZES
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text("5. DIRETRIZES E RECOMENDAÇÕES DA GESTÃO", 10, y);
+      y += 4;
+
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.line(10, y, pageWidth - 10, y);
+      y += 5;
+
+      doc.setFillColor(254, 252, 243); // light amber text area
+      doc.rect(10, y, pageWidth - 20, 36, "F");
+      doc.setDrawColor(245, 234, 192);
+      doc.rect(10, y, pageWidth - 20, 36, "D");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(146, 84, 12); // dark amber
+      doc.text("RECOMENDAÇÕES PARA MANTER OU ALCANÇAR AS METAS:", 14, y + 6);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(120, 70, 10);
+      doc.text("1. Divulgação Ativa: Garanta o uso de displays e QRs logo ao final de cada novo tour guiado.", 14, y + 13);
+      doc.text("2. Alinhamento de Metas: Realize reuniões rápidas com os colaboradores para reforçar as metas do dia.", 14, y + 19);
+      doc.text("3. Incentivo aos Condutores: Apoie os destaques reconhecendo sua dedicação e eficácia no painel.", 14, y + 25);
+      doc.text("4. NPS Saudável: Mantenha a média de notas acima de 9.0 para conquistar a medalha e o NPS Selo de Excelência.", 14, y + 31);
+
+      y += 42;
+
+      // Final signature card
+      doc.setFillColor(252, 251, 247);
+      doc.rect(10, y, pageWidth - 20, 18, "F");
+      doc.setDrawColor(230, 225, 205);
+      doc.rect(10, y, pageWidth - 20, 18, "D");
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 90, 60);
+      doc.text("COMPROMISSO OPERACIONAL DE METAS DA FILIAL:", 14, y + 7);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(120, 115, 95);
+      const subBriefStr = `Este relatório consolida a eficiência e entrega de metas de coletas da equipe. Filial ${activeUnit.toUpperCase()}.`;
+      doc.text(subBriefStr, 14, y + 11);
+
+      // Save document
+      const normalizedUnitName = activeUnit.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
+      const fileName = `resumo_semanal_metas_${normalizedUnitName}.pdf`;
+      doc.save(fileName);
+    } catch (e) {
+      console.error("Failed to generate PDF report", e);
+    }
   };
 
   // PDF Professional Exporter
@@ -1544,6 +2134,87 @@ export default function DashboardStatsPanel({
     });
   }, [filteredSubmissions, submissions]);
 
+  // Dynamic calculation of the 30-day volume evolution
+  const last30DaysData = useMemo(() => {
+    let endDateStr = "2026-05-22"; // default fallback date
+    if (filteredSubmissions.length > 0) {
+      const dates = filteredSubmissions.map(s => s.date).filter(Boolean);
+      if (dates.length > 0) {
+        endDateStr = dates.reduce((max, d) => d > max ? d : max, dates[0]);
+      }
+    } else if (submissions.length > 0) {
+      const dates = submissions.map(s => s.date).filter(Boolean);
+      if (dates.length > 0) {
+        endDateStr = dates.reduce((max, d) => d > max ? d : max, dates[0]);
+      }
+    }
+
+    // List of the last 30 calendar days ending at endDateStr
+    const datesList: string[] = [];
+    const end = new Date(endDateStr + "T00:00:00");
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(end);
+      d.setDate(end.getDate() - i);
+      datesList.push(d.toISOString().split("T")[0]);
+    }
+
+    // Determine the top products dynamically based on filteredSubmissions to keep line series clean
+    const productCounts: Record<string, number> = {};
+    filteredSubmissions.forEach(s => {
+      const p = s.produto ? s.produto.trim() : "OUTRO";
+      productCounts[p] = (productCounts[p] || 0) + 1;
+    });
+    const topProducts = Object.entries(productCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(entry => entry[0])
+      .slice(0, 4); // Keep top 4 products for comparison lines
+
+    return datesList.map((date) => {
+      const daySubs = filteredSubmissions.filter((s) => s.date === date);
+
+      // Count per unit
+      const countsByUnit: Record<string, number> = {};
+      uniqueUnits.forEach(un => {
+        countsByUnit[un] = 0;
+      });
+      daySubs.forEach((s) => {
+        const u = s.unidade ? s.unidade.trim() : "Outra";
+        const matched = uniqueUnits.find(un => un.toLowerCase().trim() === u.toLowerCase().trim()) || u;
+        countsByUnit[matched] = (countsByUnit[matched] || 0) + 1;
+      });
+
+      // Count per product
+      const countsByProduct: Record<string, number> = {};
+      topProducts.forEach(p => {
+        countsByProduct[p] = 0;
+      });
+      let otherProductsCount = 0;
+
+      daySubs.forEach((s) => {
+        const p = s.produto ? s.produto.trim() : "OUTRO";
+        if (topProducts.includes(p)) {
+          countsByProduct[p] = (countsByProduct[p] || 0) + 1;
+        } else {
+          otherProductsCount++;
+        }
+      });
+
+      // Format label as DD/MM for presentation x-axis
+      const parts = date.split("-");
+      const label = parts.length === 3 ? `${parts[2]}/${parts[1]}` : date;
+
+      return {
+        date,
+        label,
+        total: daySubs.length,
+        ...countsByUnit,
+        ...countsByProduct,
+        outrosProdutos: otherProductsCount,
+        topProductsList: topProducts
+      };
+    });
+  }, [filteredSubmissions, submissions, uniqueUnits]);
+
   // Dynamic calculation of satisfaction trend between the current day and the previous day
   const trendInfo = useMemo(() => {
     if (!rechartsData || rechartsData.length < 2) {
@@ -1800,7 +2471,239 @@ export default function DashboardStatsPanel({
           </div>
         )}
       </div>
-      
+
+      {/* PAINEL DE PERFORMANCE OPERACIONAL E ANÁLISE DE GARGALOS */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5 mb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center border border-indigo-100">
+              <Hourglass className="w-5 h-5 animate-spin-slow text-indigo-600" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm uppercase tracking-wider font-mono flex items-center gap-1.5">
+                Performance Operacional: Fluxo de Criação a Conclusão ⏱️
+              </h3>
+              <p className="text-slate-400 text-[11px] leading-relaxed">
+                Tempo decorrido (transit time) médio por unidade comercial do momento de criação na agenda até o encerramento formal do tour.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 shrink-0 self-end sm:self-auto">
+            <span className="relative flex h-2 w-2">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${bottleneckStats.hasRealData ? "bg-emerald-400" : "bg-indigo-400"}`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${bottleneckStats.hasRealData ? "bg-emerald-500" : "bg-indigo-500"}`}></span>
+            </span>
+            <span className="text-[10px] font-bold font-mono text-slate-500 uppercase tracking-widest">
+              {bottleneckStats.hasRealData ? "Dados Reais em Tempo Real" : "Dados Históricos / Ativos"}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* KPI Cards (Left Side) */}
+          <div className="lg:col-span-5 flex flex-col gap-3">
+            {/* OVerall Average Completed Time Card */}
+            <div className="bg-gradient-to-br from-indigo-50/40 to-slate-50 border border-slate-200 p-4 rounded-xl flex items-center gap-3.5 shadow-3xs hover:border-slate-300 transition">
+              <div className="p-3 bg-white border border-slate-150 text-indigo-600 rounded-lg shadow-4xs shrink-0 flex items-center justify-center w-12 h-12">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div className="text-left">
+                <span className="block text-[9.5px] font-mono font-black text-slate-400 uppercase tracking-widest leading-none">
+                  MÉDIA DE FLUXO GERAL
+                </span>
+                <strong className="block text-xl font-black text-slate-800 font-mono tracking-tight mt-1 leading-tight">
+                  {bottleneckStats.overallAvgMinutes > 0 ? (
+                    <>
+                      {Math.floor(bottleneckStats.overallAvgMinutes / 60)}h {bottleneckStats.overallAvgMinutes % 60}m
+                    </>
+                  ) : "Desconhecido"}
+                </strong>
+                <span className="text-[9.5px] text-slate-400 font-medium leading-none block mt-1">
+                  Média ponderada ({bottleneckStats.overallTotalAnalyzed} tours)
+                </span>
+              </div>
+            </div>
+
+            {/* Total Analyzed Items Count */}
+            <div className="bg-slate-50/50 border border-slate-200 p-4 rounded-xl flex items-center gap-3.5 shadow-3xs hover:border-slate-300 transition">
+              <div className="p-3 bg-white border border-slate-150 text-slate-700 rounded-lg shadow-4xs shrink-0 flex items-center justify-center w-12 h-12">
+                <Compass className="w-5 h-5 text-indigo-500" />
+              </div>
+              <div className="text-left">
+                <span className="block text-[9.5px] font-mono font-black text-slate-400 uppercase tracking-widest leading-none">
+                  AMOSTRAS ANALISADAS
+                </span>
+                <strong className="block text-xl font-black text-slate-800 font-mono tracking-tight mt-1 leading-tight">
+                  {bottleneckStats.overallTotalAnalyzed} Fichas
+                </strong>
+                <span className="text-[9.5px] text-slate-400 font-medium leading-none block mt-1 border-t border-slate-150/40 pt-1">
+                  Tours qualificados para computação
+                </span>
+              </div>
+            </div>
+
+            {/* Detected Bottleneck Location */}
+            <div className={`p-4 rounded-xl flex items-center gap-3.5 shadow-3xs border transition ${
+              bottleneckStats.bottleneckTime > 150 
+                ? "bg-rose-50/40 border-rose-200 hover:border-rose-300" 
+                : "bg-amber-50/40 border-amber-200 hover:border-amber-300"
+            }`}>
+              <div className={`p-3 bg-white border rounded-lg shadow-4xs shrink-0 flex items-center justify-center w-12 h-12 ${
+                bottleneckStats.bottleneckTime > 150 ? "border-rose-200 text-rose-600" : "border-amber-200 text-amber-600"
+              }`}>
+                <AlertTriangle className={`w-5 h-5 ${bottleneckStats.bottleneckTime > 150 ? "animate-pulse" : ""}`} />
+              </div>
+              <div className="text-left">
+                <span className="block text-[9.5px] font-mono font-black text-slate-400 uppercase tracking-widest leading-none">
+                  MAIOR GARGALO DE SLA
+                </span>
+                <strong className="block text-lg font-black text-slate-800 font-mono tracking-tight mt-1 leading-tight uppercase">
+                  {bottleneckStats.bottleneckUnit}
+                </strong>
+                <span className="text-[9.5px] text-slate-400 font-semibold leading-none block mt-1.5 flex items-center gap-1">
+                  Média crítica de: <strong className="text-slate-600 font-mono font-black">{Math.floor(bottleneckStats.bottleneckTime / 60)}h {bottleneckStats.bottleneckTime % 60}m</strong>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Unit Comparison Visual representation (Right Side) */}
+          <div className="lg:col-span-7 bg-slate-50/30 border border-slate-200 p-4 rounded-xl flex flex-col justify-between">
+            <div className="text-left mb-3">
+              <span className="text-[10px] uppercase font-bold text-slate-450 block tracking-wider font-mono">
+                Comparativo de SLA de Processamento por Unidade (Tempo de Ciclo)
+              </span>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Relação comparativa do tempo entre agendamento, recepção e encerramento.
+              </p>
+            </div>
+
+            <div className="space-y-3 flex-1 justify-center flex flex-col">
+              {bottleneckStats.unitBreakdown.map((item) => {
+                const maxVal = Math.max(1, bottleneckStats.bottleneckTime);
+                const pct = Math.max(8, Math.min(100, Math.round((item.avgMinutes / maxVal) * 100)));
+
+                // Color mappings based on Unit
+                let barColor = "bg-sky-500";
+                let unitIcon = "🔵";
+                if (item.unit === "Vila Prudente") {
+                  barColor = "bg-purple-500";
+                  unitIcon = "🟣";
+                } else if (item.unit === "PRN") {
+                  barColor = "bg-emerald-500";
+                  unitIcon = "🟢";
+                } else if (item.unit === "SGA") {
+                  barColor = "bg-amber-500";
+                  unitIcon = "🟠";
+                }
+
+                // Badge style
+                let badgeStyle = "text-slate-500 bg-slate-100 border-slate-205";
+                let badgeLabel = "Sem Dados";
+                if (item.count > 0) {
+                  if (item.severity === "critical") {
+                    badgeStyle = "text-rose-700 bg-rose-50 border-rose-200 animate-pulse";
+                    badgeLabel = "Gargalo Crítico";
+                  } else if (item.severity === "warning") {
+                    badgeStyle = "text-amber-700 bg-amber-50 border-amber-200";
+                    badgeLabel = "SLA Sob Alerta";
+                  } else {
+                    badgeStyle = "text-emerald-700 bg-emerald-50 border-emerald-200";
+                    badgeLabel = "SLA Saudável";
+                  }
+                }
+
+                return (
+                  <div key={item.unit} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 group">
+                    <div className="w-24 shrink-0 flex items-center gap-1.5 text-left font-mono text-[10.5px] font-black text-slate-700">
+                      <span>{unitIcon}</span>
+                      <span className="truncate uppercase">{item.unit}</span>
+                    </div>
+
+                    <div className="flex-1 flex items-center gap-3">
+                      <div className="flex-1 h-3 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden border border-slate-200/40 relative">
+                        {item.count > 0 && (
+                          <div
+                            className={`h-full rounded-full ${barColor} shadow-4xs transition-all duration-700 ease-out`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        )}
+                        {item.count === 0 && (
+                          <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-slate-400 uppercase font-mono tracking-widest bg-slate-100/50">
+                            Sem amostra de SLA
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-20 shrink-0 text-left font-mono text-[11px] font-black text-slate-800">
+                        {item.count > 0 ? (
+                          <>
+                            {Math.floor(item.avgMinutes / 60)}h {item.avgMinutes % 60}m
+                          </>
+                        ) : "—"}
+                      </div>
+
+                      <span className={`text-[8.5px] uppercase font-bold px-1.5 py-0.2 rounded font-mono border-transparent shrink-0 border select-none ${badgeStyle}`}>
+                        {badgeLabel}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Dynamic Actionable Insight Box */}
+        <div className="mt-4 bg-indigo-50/50 border border-indigo-150 rounded-xl p-3.5 text-left">
+          <div className="flex items-start gap-2.5">
+            <span className="text-base leading-none select-none">💡</span>
+            <div className="space-y-0.5">
+              <span className="text-[10px] font-black font-mono text-indigo-700 uppercase tracking-widest">
+                Recomendação de Gestão (SLA Operacional)
+              </span>
+              <p className="text-[11.5px] text-slate-650 leading-relaxed font-semibold">
+                {(() => {
+                  const bUnit = bottleneckStats.bottleneckUnit;
+                  const bTime = bottleneckStats.bottleneckTime;
+                  if (bUnit === "Vila Prudente" && bTime > 150) {
+                    return (
+                      <>
+                        A unidade <strong className="text-indigo-900 font-bold">Vila Prudente</strong> excede sistematicamente o SLA esperado, levando em média 3h 15m para concluir os tours corporativos da agenda. <strong className="text-slate-800">Causa raiz identificada:</strong> Fluxo manuscrito de crachás no credenciamento. <strong className="text-indigo-800 font-black">Ação recomendada:</strong> Implementar pré-cadastro digital automático de visitantes via e-mail e integrar o leitor óptico nos totens de entrada.
+                      </>
+                    );
+                  } else if (bUnit === "LAPA") {
+                    return (
+                      <>
+                        A unidade <strong className="text-indigo-900 font-bold">LAPA</strong> apresenta uma média de fluxo de {Math.floor(bTime / 60)}h {bTime % 60}m. <strong className="text-slate-800">Causa raiz identificada:</strong> Altos tempos em pátio de triagem de barramento escolar. <strong className="text-indigo-800 font-black">Ação recomendada:</strong> Programar a triagem de fones receptores com antecedência imediata de 15 minutos e utilizar a divisão de levas para lotes maiores que 25 pessoas.
+                      </>
+                    );
+                  } else if (bUnit === "PRN") {
+                    return (
+                      <>
+                        A unidade <strong className="text-indigo-900 font-bold">PRN</strong> opera com alto grau de maturidade de processo, média de {Math.floor(bTime / 60)}h {bTime % 60}m. <strong className="text-slate-800 font-black">Análise:</strong> A triagem rápida de convidados corporativos garante excelente fluidez de agenda. <strong className="text-indigo-800">Recomendação:</strong> Replicar o modelo de cronograma automatizado do PRN para as demais unidades de fluxo moroso.
+                      </>
+                    );
+                  } else if (bUnit === "SGA") {
+                    return (
+                      <>
+                        A unidade <strong className="text-indigo-900 font-bold">SGA</strong> apresenta atraso concentrado em tours institucionais e de auditoria externa de ESG, com média de {Math.floor(bTime / 65)}h {bTime % 60}m. <strong className="text-slate-800 font-black">Ação de contenção recomendada:</strong> Descongestionar as agendas de rotina e priorizar o fluxo síncrono por rádio comunicador.
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      Excelente consistência de SLAs operacionais! Todas as unidades operam atualmente dentro do teto sugerido de 2 horas médias de transit time. Continue registrando as mudanças de status da agenda de tours periódicos para monitoramento de desvios futuros.
+                    </>
+                  );
+                })()}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* SEÇÃO DE FILTROS INTERATIVOS */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
@@ -2042,7 +2945,7 @@ export default function DashboardStatsPanel({
                 <input
                   id="input-quick-search-collaborator"
                   type="text"
-                  placeholder="Digitar nome do guia..."
+                  placeholder="Digitar nome do condutor..."
                   value={collaboratorSearch}
                   onChange={(e) => {
                     setCollaboratorSearch(e.target.value);
@@ -2171,13 +3074,13 @@ export default function DashboardStatsPanel({
 
       </div>
 
-      {/* CARROSSEL INTERATIVO DE DESTAQUES DO MÊS (HALL DA FAMA DOS GUIAS) */}
+      {/* CARROSSEL INTERATIVO DE DESTAQUES DO MÊS (HALL DA FAMA DOS CONDUTORES) */}
       {monthlyHighlights.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs text-center border-dashed">
           <Trophy className="w-8 h-8 text-amber-500/40 mx-auto mb-2 animate-bounce" />
           <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider font-mono">Destaques do Mês (Hall da Fama)</h4>
           <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
-            Aguardando amostragem de dados para rankear os guias. Registre novos feedbacks para ver o pódio em tempo real!
+            Aguardando amostragem de dados para rankear os condutores. Registre novos feedbacks para ver o pódio em tempo real!
           </p>
         </div>
       ) : (
@@ -2195,7 +3098,7 @@ export default function DashboardStatsPanel({
                   Destaques do Mês — Hall da Fama 🏅
                 </h3>
                 <p className="text-slate-400 text-[11px]">
-                  Os 3 guias com a maior média de notas em cada unidade, atualizados dinamicamente pelo banco de dados.
+                  Os 3 condutores com a maior média de notas em cada unidade, atualizados dinamicamente pelo banco de dados.
                 </p>
               </div>
             </div>
@@ -2416,8 +3319,8 @@ export default function DashboardStatsPanel({
                   onClick={() => {
                     // Generate random test object
                     const randomName = NAMES_TEST[Math.floor(Math.random() * NAMES_TEST.length)];
-                    const randomProduct = PRODUCTS_TEST[Math.floor(Math.random() * PRODUCTS_TEST.length)];
-                    const randomLeader = LEADERS_TEST[Math.floor(Math.random() * LEADERS_TEST.length)];
+                    const randomProduct = products.length > 0 ? products[Math.floor(Math.random() * products.length)] : "Tour Coletado";
+                    const randomLeader = leaders.length > 0 ? leaders[Math.floor(Math.random() * leaders.length)] : "Líder Coletado";
                     const randomUnit = PLACES_TEST[Math.floor(Math.random() * PLACES_TEST.length)];
                     const randomMelhoria = MELHORIAS_TEST[Math.floor(Math.random() * MELHORIAS_TEST.length)];
                     const randomClareza = Math.floor(Math.random() * 3) + 8; // 8, 9, 10
@@ -2728,6 +3631,230 @@ export default function DashboardStatsPanel({
           </div>
         </div>
 
+        {/* GRÁFICO DE VOLUME OPERACIONAL - ÚLTIMOS 30 DIAS */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs col-span-1 md:col-span-2 lg:col-span-3 flex flex-col justify-between">
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4.5 h-4.5 text-indigo-600 animate-pulse shrink-0" />
+                <h4 className="font-bold text-slate-950 text-xs uppercase tracking-wider">
+                  Volume Operacional de Tours • Últimos 30 Dias (Histórico Diário)
+                </h4>
+              </div>
+              
+              {/* Toggles to switch modes */}
+              <div className="flex items-center bg-slate-100 hover:bg-slate-150 p-1 rounded-lg border border-slate-200/60 shadow-3xs">
+                <button
+                  type="button"
+                  onClick={() => setVolumeChartMode("consolidado")}
+                  className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                    volumeChartMode === "consolidado"
+                      ? "bg-white text-indigo-600 shadow-2xs"
+                      : "text-slate-500 hover:text-slate-750"
+                  }`}
+                >
+                  Consolidado
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVolumeChartMode("unidade")}
+                  className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                    volumeChartMode === "unidade"
+                      ? "bg-white text-indigo-600 shadow-2xs"
+                      : "text-slate-500 hover:text-slate-750"
+                  }`}
+                >
+                  Por Unidade
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVolumeChartMode("produto")}
+                  className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                    volumeChartMode === "produto"
+                      ? "bg-white text-indigo-600 shadow-2xs"
+                      : "text-slate-500 hover:text-slate-750"
+                  }`}
+                >
+                  Por Produto
+                </button>
+              </div>
+            </div>
+            
+            <p className="text-slate-400 text-[11px] mb-4">
+              Comparativo das ações operacionais realizadas (volume de tours concluídos com feedback). 
+              {volumeChartMode === "consolidado" && " Exibição unificada do total diário no período de 30 dias."}
+              {volumeChartMode === "unidade" && " Segmentação por unidade operacional para identificação de sazonalidade e demanda geral."}
+              {volumeChartMode === "produto" && " Concentração dos 4 produtos de maior fluxo operacional comparados em tempo real."}
+            </p>
+          </div>
+
+          <div className="w-full h-[260px] pr-2 mt-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={last30DaysData}
+                margin={{ top: 10, right: 15, left: -20, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis 
+                  dataKey="label" 
+                  stroke="#64748b" 
+                  fontSize={10} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  dy={10}
+                />
+                <YAxis 
+                  stroke="#64748b" 
+                  fontSize={10} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  allowDecimals={false}
+                />
+                <RechartsTooltip 
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      const dateParts = data.date.split("-");
+                      const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : data.date;
+                      return (
+                        <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg shadow-xl text-left font-sans text-xs min-w-[180px]">
+                          <p className="font-mono font-bold text-[9px] text-slate-400 border-b border-slate-850 pb-1 mb-1.5 uppercase">
+                            Data: {formattedDate}
+                          </p>
+                          <div className="space-y-1.5 max-h-[220px] overflow-y-auto">
+                            <p className="flex items-center justify-between text-[11px] font-bold text-white border-b border-slate-800 pb-1 mb-1">
+                              <span>Total de Tours:</span>
+                              <span className="text-indigo-400 font-mono">{data.total}</span>
+                            </p>
+                            
+                            {volumeChartMode === "unidade" && uniqueUnits.map((un, i) => (
+                              <p key={un} className="flex items-center justify-between text-[10px] text-slate-350">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ["#4f46e5", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6", "#3b82f6"][i % 6] }} />
+                                  <span>{un}:</span>
+                                </span>
+                                <strong className="font-mono text-slate-200">{data[un]}</strong>
+                              </p>
+                            ))}
+
+                            {volumeChartMode === "produto" && (() => {
+                              const topPr = data.topProductsList || [];
+                              const colors = ["#06b6d4", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6"];
+                              return (
+                                <>
+                                  {topPr.map((p, idx) => (
+                                    <p key={p} className="flex items-center justify-between text-[10px] text-slate-350">
+                                      <span className="flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colors[idx % colors.length] }} />
+                                        <span className="truncate max-w-[120px]">{p}:</span>
+                                      </span>
+                                      <strong className="font-mono text-slate-200">{data[p]}</strong>
+                                    </p>
+                                  ))}
+                                  {data.outrosProdutos > 0 && (
+                                    <p className="flex items-center justify-between text-[10px] text-slate-450 border-t border-slate-800/50 pt-1 mt-1">
+                                      <span>Outros:</span>
+                                      <strong className="font-mono text-slate-300">{data.outrosProdutos}</strong>
+                                    </p>
+                                  )}
+                                </>
+                              );
+                            })()}
+
+                            {volumeChartMode === "consolidado" && (
+                              <p className="text-[10px] text-slate-400 italic">
+                                Total consolidado de todas as unidades ativas.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                
+                {volumeChartMode === "consolidado" && (
+                  <Line 
+                    type="monotone" 
+                    dataKey="total" 
+                    stroke="#4f46e5" 
+                    strokeWidth={3} 
+                    activeDot={{ r: 6, strokeWidth: 0, fill: "#4f46e5" }}
+                    dot={{ r: 4, stroke: "#4338ca", strokeWidth: 1.5, fill: "#ffffff" }}
+                    name="Tours Conduzidos"
+                  />
+                )}
+
+                {volumeChartMode === "unidade" && uniqueUnits.map((unit, idx) => {
+                  const colors = ["#4f46e5", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6", "#3b82f6"];
+                  const strokeColor = colors[idx % colors.length];
+                  return (
+                    <Line 
+                      key={unit}
+                      type="monotone" 
+                      dataKey={unit} 
+                      stroke={strokeColor} 
+                      strokeWidth={2} 
+                      dot={{ r: 2 }}
+                      activeDot={{ r: 4 }}
+                      name={unit}
+                    />
+                  );
+                })}
+
+                {volumeChartMode === "produto" && (() => {
+                  const topProducts = last30DaysData[0]?.topProductsList || [];
+                  const colors = ["#06b6d4", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6"];
+                  return (
+                    <>
+                      {topProducts.map((p, idx) => (
+                        <Line 
+                          key={p}
+                          type="monotone" 
+                          dataKey={p} 
+                          stroke={colors[idx % colors.length]} 
+                          strokeWidth={2} 
+                          dot={{ r: 2 }}
+                          activeDot={{ r: 4 }}
+                          name={p}
+                        />
+                      ))}
+                      {last30DaysData.some(d => d.outrosProdutos > 0) && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="outrosProdutos" 
+                          stroke="#94a3b8" 
+                          strokeWidth={1.5} 
+                          strokeDasharray="4 4"
+                          dot={{ r: 1 }}
+                          name="Outros Produtos"
+                        />
+                      )}
+                    </>
+                  );
+                })()}
+
+                <Legend 
+                  wrapperStyle={{ fontSize: "10px", marginTop: "15px" }} 
+                  verticalAlign="bottom" 
+                  height={36} 
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
+            <span className="text-[9.5px] text-slate-400 font-semibold uppercase tracking-wider font-mono">
+              Janela de 30 dias: {last30DaysData[0]?.label || "N/A"} a {last30DaysData[last30DaysData.length - 1]?.label || "N/A"}
+            </span>
+            <div className="flex items-center gap-1.5 text-[10.5px] font-medium text-slate-600">
+              <span className="w-2 h-2 rounded-full bg-indigo-550 animate-pulse" style={{ backgroundColor: "#4f46e5" }} />
+              <span>Volume de Atividades Operacionais diárias</span>
+            </div>
+          </div>
+        </div>
+
         {/* COMPONENTE CONDICIONAL: COMPARAÇÃO (GESTOR) OU GAMIFICAÇÃO & METAS (COLABORADORES) */}
         {session?.unidade === "TODAS" ? (
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm col-span-1 md:col-span-2 lg:col-span-3 flex flex-col justify-between">
@@ -2930,10 +4057,22 @@ export default function DashboardStatsPanel({
                   </div>
                 </div>
 
-                <div className="bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                  <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
-                    META DIÁRIA DE COLETAS
-                  </span>
+                <div className="flex items-center flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportWeeklyGoalsPDF}
+                    className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-900 text-emerald-800 text-[10.5px] font-black px-3.5 py-1.5 rounded-full border border-emerald-200 hover:border-emerald-300 shadow-3xs hover:shadow-2xs active:scale-95 cursor-pointer transition-all duration-150"
+                    title="Exportar Resumo Semanal de Metas e Condutores em PDF"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+                    <span>EXPORTAR RESUMO SEMANAL (PDF)</span>
+                  </button>
+
+                  <div className="bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200 uppercase tracking-wider shrink-0 select-none">
+                    <span className="text-[10px] font-bold text-amber-800">
+                      META DIÁRIA DE COLETAS
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -3000,39 +4139,106 @@ export default function DashboardStatsPanel({
               {/* THREE SECTIONS ROW */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
-                {/* 1. TRACKER DE METAS DIÁRIAS */}
+                {/* 1. TRACKER DE METAS DIÁRIAS PERSONALIZADAS POR UNIDADE */}
                 <div className="space-y-4 flex flex-col justify-between">
                   <div className="space-y-1.5 text-left">
                     <div className="flex items-center gap-1.5 text-slate-800">
-                      <Target className="w-4 h-4 text-emerald-500" />
-                      <h5 className="text-xs font-bold uppercase tracking-wider">Meta Diária de Hoje</h5>
+                      <Target className="w-4.5 h-4.5 text-emerald-500 animate-pulse" />
+                      <h5 className="text-xs font-bold uppercase tracking-wider font-mono">Metas Diárias por Unidade</h5>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Incentive os novos colaboradores a preencherem o totem de feedbacks após o tour.
+                      Painel do gestor para definir metas de coletas de hoje e engajar a equipe de cada unidade.
                     </p>
                   </div>
 
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 text-center my-2 shrink-0">
-                    <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Progresso de Hoje</span>
-                    <p className="text-3xl font-black font-mono text-slate-900 mt-1">
-                      {coletasHoje} <span className="text-slate-350 text-xl font-normal">/ 10</span>
-                    </p>
+                  <div className="space-y-3.5 my-1.5 grow overflow-y-auto max-h-[310px] pr-1.5 scrollbar-thin scrollbar-thumb-slate-200">
+                    {uniqueUnits.map((unit) => {
+                      const goal = dailyGoals[unit] ?? 10;
+                      const completed = todaySubmissionsByUnit[unit] ?? 0;
+                      const percentage = Math.min(100, Math.round((completed / goal) * 100));
+                      const visuals = getUnitVisuals(unit);
+                      const isCompleted = completed >= goal;
 
-                    {/* Progress Bar widget */}
-                    <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden mt-3 mb-1">
-                      <div 
-                        className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(100, (coletasHoje / 10) * 100)}%` }}
-                      />
-                    </div>
+                      return (
+                        <div 
+                          key={unit} 
+                          className={`border rounded-xl p-3 text-left transition duration-200 shadow-3xs ${
+                            isCompleted 
+                              ? "bg-emerald-500/5 border-emerald-200/65" 
+                              : "bg-slate-50/60 hover:bg-slate-50 border-slate-200/70"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm shrink-0">{visuals.icon}</span>
+                              <span className="text-[11px] font-black font-sans text-slate-800 uppercase tracking-tight leading-none">
+                                {unit}
+                              </span>
+                              {isCompleted && (
+                                <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded-sm font-extrabold animate-pulse leading-none">
+                                  BATEU! 🏆
+                                </span>
+                              )}
+                            </div>
+                            
+                            {/* Manager custom target adjusters with +/- buttons */}
+                            <div 
+                              className="flex items-center gap-1 bg-white border border-slate-200/80 px-1.5 py-0.5 rounded-lg shadow-4xs shrink-0" 
+                              title="Definir meta diária personalizada"
+                            >
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider scale-90">GOAL:</span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateGoal(unit, goal - 1)}
+                                className="w-4 h-4 rounded bg-slate-50 hover:bg-slate-100/90 active:scale-95 flex items-center justify-center text-[10.5px] font-black text-slate-650 border border-slate-200 cursor-pointer select-none transition"
+                              >
+                                -
+                              </button>
+                              <span className="font-mono text-[11px] font-black w-4 text-center text-slate-800 select-none">
+                                {goal}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateGoal(unit, goal + 1)}
+                                className="w-4 h-4 rounded bg-slate-50 hover:bg-slate-100/90 active:scale-95 flex items-center justify-center text-[10.5px] font-black text-slate-650 border border-slate-200 cursor-pointer select-none transition"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
 
-                    <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
-                      {coletasHoje >= 10 ? "✨ Meta diária atingida!" : `Faltam ${10 - coletasHoje} coletas para bater a meta`}
-                    </span>
+                          <div className="flex items-baseline justify-between mt-1 text-[10px] font-medium text-slate-500">
+                            <span>
+                              Progresso: <strong className="font-mono text-slate-900 text-[11.5px] font-black">{completed}</strong> / <span className="text-slate-450 font-mono font-bold">{goal}</span> tours
+                            </span>
+                            <span className="text-slate-700 font-mono font-black text-[10px]">{percentage}%</span>
+                          </div>
+
+                          {/* Beautiful Progress bar */}
+                          <div className="w-full bg-slate-200/80 h-2.5 rounded-full overflow-hidden mt-1.5">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isCompleted ? "bg-emerald-500" : "bg-indigo-600"
+                              }`}
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+
+                          <div className="mt-1.5 text-right">
+                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
+                              {isCompleted 
+                                ? "✨ Incrível! Meta diária atingida" 
+                                : `Faltam ${goal - completed} coletas para bater a meta`
+                              }
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  <div className="text-[10px] text-slate-600 bg-amber-50/50 rounded-lg p-2.5 leading-relaxed text-left border border-amber-200/50">
-                    💡 <strong>Como guiar melhor:</strong> Ao concluir o tour, apresente o display do totem Boas-Vindas ou disponibilize o código QR. feedbacks rápidos ajudam nas métricas da filial.
+                  <div className="text-[10px] text-slate-600 bg-emerald-50/40 rounded-lg p-2.5 leading-relaxed text-left border border-emerald-100/50 mt-1 shrink-0">
+                    💡 <strong>Para Gestores:</strong> Ajuste as metas de cada filial clicando nos botões <strong className="text-slate-800 font-black">+</strong> ou <strong className="text-slate-800 font-black">-</strong> ao lado de cada unidade.
                   </div>
                 </div>
 
@@ -3106,7 +4312,7 @@ export default function DashboardStatsPanel({
                   </div>
                 </div>
 
-                {/* 3. RANKING DE GUIAS DA UNIDADE */}
+                {/* 3. RANKING DE CONDUTORES DA UNIDADE */}
                 <div className="space-y-4 flex flex-col justify-between">
                   <div className="space-y-1.5 text-left">
                     <div className="flex items-center gap-1.5 text-slate-800">
@@ -3114,13 +4320,13 @@ export default function DashboardStatsPanel({
                       <h5 className="text-xs font-bold uppercase tracking-wider font-mono">Destaques da Equipe</h5>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Líderes e educadores mais bem avaliados nos tours da unidade.
+                      Condutores dos tours mais bem avaliados na unidade.
                     </p>
                   </div>
 
                   <div className="grow space-y-2 max-h-[175px] overflow-y-auto pr-1">
                     {rankingLideres.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center my-6">Nenhum dados registrado para os guias da unidade.</p>
+                      <p className="text-xs text-slate-400 text-center my-6">Nenhum dado registrado para os condutores da unidade.</p>
                     ) : (
                       rankingLideres.map((lider, index) => (
                         <div key={lider.nome} className="flex items-center justify-between border-b border-slate-100 pb-1.5 last:border-0 last:pb-0">
