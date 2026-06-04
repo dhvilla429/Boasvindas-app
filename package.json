@@ -1,30 +1,51 @@
-{
-  "name": "pesquisa-pos-tour-tp",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview --port=4173 --host=0.0.0.0",
-    "lint": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@tailwindcss/vite": "^4.1.14",
-    "@vitejs/plugin-react": "^5.0.4",
-    "jspdf": "^4.2.1",
-    "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
-    "pptxgenjs": "^4.0.1",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1",
-    "recharts": "^3.8.1",
-    "vite": "^6.2.3"
-  },
-  "devDependencies": {
-    "@types/node": "^22.14.0",
-    "autoprefixer": "^10.4.21",
-    "tailwindcss": "^4.1.14",
-    "typescript": "~5.8.2"
+export interface PushNotificationDetail {
+  id: string;
+  title: string;
+  body: string;
+  type: "notice" | "message" | "tour_reminder" | "tour_started" | "goal_reached" | "info";
+  time: string;
+}
+
+/**
+ * Utility to trigger browser-level Push Notifications AND dispatch a global CustomEvent
+ * for the high-fidelity iOS/Android Simulated Notification Banner UI.
+ */
+export function sendPushNotification(
+  title: string,
+  body: string,
+  type: PushNotificationDetail["type"] = "info"
+) {
+  const time = new Date().toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const detail: PushNotificationDetail = {
+    id: "notify-" + Math.random().toString(36).substring(2, 9),
+    title,
+    body,
+    type,
+    time,
+  };
+
+  // 1. Dispatch custom event for our React in-app device simulator banners
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("app-web-push", { detail }));
+  }
+
+  // 2. Try triggering native browser notification if granted
+  if (
+    typeof window !== "undefined" &&
+    "Notification" in window &&
+    Notification.permission === "granted"
+  ) {
+    try {
+      new Notification(title, {
+        body,
+        icon: "https://cdn-icons-png.flaticon.com/512/3602/3652191.png",
+      });
+    } catch (e) {
+      console.warn("Standard notification blocked or failed in sandboxed iframe. Falling back to in-app simulation.", e);
+    }
   }
 }
